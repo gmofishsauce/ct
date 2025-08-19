@@ -1,6 +1,19 @@
 # If you prefer the allow list template instead of the deny list, see community template:
 # https://github.com/github/gitignore/blob/main/community/Golang/Go.AllowList.gitignore
 #
+# We have Javascript visualization engine, a Golang server, and a C++ binary built from
+# from source in this repo, so the excludes are somewhat involved.
+
+# We have a local stockfish binary built from a zipfile.
+# Don't commit the stockfish source/build tree or binary; just commit the downloaded zip.
+sf/Stockfish-master
+sf/stockfish
+
+# We have a Javascript front end we build with Vite 
+js/node_modules
+
+# The rest is the Github template for Go, which should cover the Golang server.
+
 # Binaries for programs and plugins
 *.exe
 *.exe~
