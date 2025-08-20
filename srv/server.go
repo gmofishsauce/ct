@@ -1,421 +1,398 @@
 // main.go
-// A minimal Go server that:
-// 1) Runs alongside Vite in development, exposing only API/WebSocket endpoints.
-// 2) Streams long-running CLI stdout/stderr over WebSockets and supports optional stdin from the client.
-// 3) In production, optionally serves the built Vite static files from ./dist while still providing the API/WS.
+// Minimal Gorilla-based Go server for a single, preconfigured CLI with streaming WebSocket I/O.
 //
-// How to use (development):
-// - Run Vite dev server (default http://localhost:5173)
-// - Run this Go server (default http://localhost:8080)
-// - Configure Vite to proxy /api and /ws to http://localhost:8080 (see vite.config.ts snippet below)
-// - Frontend connects to ws://localhost:5173/ws/run (Vite will proxy to Go)
+// ✅ Dev mode: run alongside Vite; only exposes /api and /ws. Use Vite proxy to forward requests.
+// ✅ Prod mode: also serves Vite-built static files from ./dist or from an embedded FS.
+// ✅ Security: never executes arbitrary commands. The CLI path is configured at startup (flag/env).
+// ✅ Init API: front end calls /api/init once with { options: {key: value}, cwd?: "..." }.
+//    Those options are converted to flags like --key=value when launching the CLI.
+// ✅ WS streaming: /ws/run spawns the CLI with the current options; streams stdout/stderr,
+//    accepts stdin via messages, and reports exit status.
 //
-// How to use (production):
-// - Build your Vite app: `npm run build` → outputs ./dist
-// - Start this server with SERVE_STATIC=true (env var) and it will serve ./dist at '/'
-// - Frontend will be available on the same port as the API/WS
+// Flags / env vars:
+//   --addr (ADDR)                : listen address (default ":8080")
+//   --allowed-origin (ALLOWED_ORIGIN): allow Origin for CORS/WS in dev (e.g., http://localhost:5173)
+//   --serve-static (SERVE_STATIC): "" | "fs" | "embed"  ("fs" serves ./dist from disk, "embed" serves embedded dist)
+//   --static-dir (STATIC_DIR)    : directory for static files when serve-static=fs (default "dist")
+//   --cmd (CLI_CMD)              : REQUIRED. Path to the CLI to run (e.g., "./mytool" or "ffmpeg")
+//   --cmd-args (CLI_ARGS)        : OPTIONAL. Comma-separated fixed args always passed before options (e.g., "--fast,-n,10")
 //
-// SECURITY NOTE:
-// - This example passes the command to run via query/JSON. In real apps, limit to an allowlist and validate args!
-// - Never expose arbitrary command execution on an internet-facing server.
+// Endpoints:
+//   GET  /api/health
+//   POST /api/init        {"options": {"foo":"bar"}, "cwd":"/path/optional"}
+//   GET  /ws/run          WebSocket: server immediately starts the configured CLI with current options
+//                         Messages from server: {type:"started"|"stdout"|"stderr"|"exit"|"error", ...}
+//                         Messages to server  : {type:"stdin"|"signal"|"ping", data?: string}
+//
+// vite.config.ts (dev proxy):
+//   export default defineConfig({
+//     server: { proxy: {
+//       '/api': { target: 'http://localhost:8080', changeOrigin: true },
+//       '/ws':  { target: 'ws://localhost:8080', ws: true, changeOrigin: true },
+//     } }
+//   })
 
 package main
 
 import (
-	"bufio"
-	"context"
-	"embed"
-	"encoding/json"
-	"errors"
-	"flag"
-	"fmt"
-	"log"
-	"net/http"
-	"os"
-	"os/exec"
-	"path"
-	"path/filepath"
-	"strings"
-	"sync"
-	"time"
+    "bufio"
+    "bytes"
+    "context"
+    "embed"
+    "encoding/json"
+    "errors"
+    "flag"
+    "fmt"
+    "io/fs"
+    "log"
+    "net/http"
+    "os"
+    "os/exec"
+    "path"
+    "path/filepath"
+    "sort"
+    "strings"
+    "sync"
+    "time"
 
-	"github.com/gorilla/mux"
-	"github.com/gorilla/websocket"
+    "github.com/gorilla/mux"
+    "github.com/gorilla/websocket"
 )
 
-//go:embed dist/*
-var embeddedDist embed.FS // optional: used when SERVE_STATIC=embed
+// --- Embedded frontend (optional) ---
+//go:embed dist
+var embeddedDist embed.FS // contains the "dist" directory created by `npm run build`
 
-type runRequest struct {
-	Cmd  string   `json:"cmd"`
-	Args []string `json:"args"`
-	Cwd  string   `json:"cwd,omitempty"`
-}
+// --- Config and state ---
 
 type serverConfig struct {
-	Addr           string
-	AllowedOrigin  string // e.g., http://localhost:5173 during dev
-	ServeStatic    string // "", "true", or "embed"
-	StaticDir      string // path to ./dist for static serving
-	CommandAllowlist []string // optional allowlist of allowed commands
+    Addr          string
+    AllowedOrigin string
+    ServeStatic   string // "", "fs", "embed"
+    StaticDir     string
+    CommandPath   string   // REQUIRED: the CLI to execute
+    FixedArgs     []string // from CLI_ARGS (comma-separated)
 }
 
-func (c serverConfig) isAllowed(cmd string) bool {
-	if len(c.CommandAllowlist) == 0 {
-		return true // no allowlist → allow all (NOT for production)
-	}
-	for _, allowed := range c.CommandAllowlist {
-		if cmd == allowed {
-			return true
-		}
-	}
-	return false
+type initRequest struct {
+    Options map[string]string `json:"options"`
+    Cwd     string            `json:"cwd,omitempty"`
+}
+
+// runtimeState holds the latest init() values used when launching the CLI.
+var runtimeState = struct {
+    mu      sync.RWMutex
+    options map[string]string
+    cwd     string
+}{
+    options: map[string]string{},
 }
 
 var upgrader = websocket.Upgrader{
-	ReadBufferSize:  32 * 1024,
-	WriteBufferSize: 32 * 1024,
-	// CheckOrigin controls which origins may connect (important in dev when using Vite on a different port).
-	CheckOrigin: func(r *http.Request) bool { return true }, // tightened below in wsHandler using config
+    ReadBufferSize:  32 * 1024,
+    WriteBufferSize: 32 * 1024,
+    CheckOrigin: func(r *http.Request) bool { return true }, // tightened per-request below
 }
 
 func main() {
-	cfg := loadConfig()
-	log.Printf("Starting server on %s (serveStatic=%s, allowedOrigin=%q)\n", cfg.Addr, cfg.ServeStatic, cfg.AllowedOrigin)
+    cfg, err := loadConfig()
+    if err != nil {
+        log.Fatalf("config error: %v", err)
+    }
+    log.Printf("Starting server on %s (serveStatic=%s, allowedOrigin=%q, cmd=%q)\n",
+        cfg.Addr, cfg.ServeStatic, cfg.AllowedOrigin, cfg.CommandPath)
 
-	r := mux.NewRouter()
+    r := mux.NewRouter()
 
-	// Health check
-	r.HandleFunc("/api/health", func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte(`{"ok":true}`))
-	}).Methods(http.MethodGet)
+    // Healthcheck
+    r.HandleFunc("/api/health", func(w http.ResponseWriter, r *http.Request) {
+        w.Header().Set("Content-Type", "application/json")
+        w.WriteHeader(http.StatusOK)
+        _, _ = w.Write([]byte(`{"ok":true}`))
+    }).Methods(http.MethodGet)
 
-	// WebSocket endpoint for running commands with streaming I/O
-	r.HandleFunc("/ws/run", func(w http.ResponseWriter, r *http.Request) {
-		wsHandler(w, r, cfg)
-	}).Methods(http.MethodGet)
+    // Init API
+    r.HandleFunc("/api/init", func(w http.ResponseWriter, r *http.Request) { apiInitHandler(w, r) }).Methods(http.MethodPost)
 
-	// Optional: plain HTTP endpoint to run a command and return its full output (non-streaming)
-	r.HandleFunc("/api/run", func(w http.ResponseWriter, r *http.Request) {
-		apiRunHandler(w, r, cfg)
-	}).Methods(http.MethodPost)
+    // WebSocket run endpoint
+    r.HandleFunc("/ws/run", func(w http.ResponseWriter, r *http.Request) { wsRunHandler(w, r, cfg) }).Methods(http.MethodGet)
 
-	// Static file serving (production)
-	if strings.EqualFold(cfg.ServeStatic, "true") {
-		// Serve from disk directory (cfg.StaticDir)
-		static := http.FileServer(http.Dir(cfg.StaticDir))
-		r.PathPrefix("/").Handler(spaFallback(static, filepath.Join(cfg.StaticDir, "index.html")))
-		log.Printf("Serving static files from %s\n", cfg.StaticDir)
-	} else if strings.EqualFold(cfg.ServeStatic, "embed") {
-		// Serve from embedded FS built from //go:embed dist/*
-		fsys := http.FS(embeddedDist)
-		static := http.FileServer(http.StripPrefix("/", http.FileServer(fsys)))
-		r.PathPrefix("/").Handler(spaFallback(static, "dist/index.html"))
-		log.Printf("Serving static files from embedded FS (dist)")
-	}
+    // Static serving (prod)
+    switch strings.ToLower(cfg.ServeStatic) {
+    case "fs":
+        static := http.FileServer(http.Dir(cfg.StaticDir))
+        r.PathPrefix("/").Handler(spaFallbackFS(static, filepath.Join(cfg.StaticDir, "index.html")))
+        log.Printf("Serving static files from disk: %s", cfg.StaticDir)
+    case "embed":
+        distFS, err := fs.Sub(embeddedDist, "dist")
+        if err != nil {
+            log.Fatalf("embed fs error: %v", err)
+        }
+        static := http.FileServer(http.FS(distFS))
+        r.PathPrefix("/").Handler(spaFallbackEmbed(static, distFS))
+        log.Printf("Serving static files from embedded dist/")
+    default:
+        // no static serving in dev; only API/WS
+    }
 
-	srv := &http.Server{
-		Addr:         cfg.Addr,
-		Handler:      withCors(r, cfg.AllowedOrigin),
-		ReadTimeout:  60 * time.Second,
-		WriteTimeout: 60 * time.Second,
-		IdleTimeout:  120 * time.Second,
-	}
+    srv := &http.Server{
+        Addr:         cfg.Addr,
+        Handler:      withCors(r, cfg.AllowedOrigin),
+        ReadTimeout:  60 * time.Second,
+        WriteTimeout: 60 * time.Second,
+        IdleTimeout:  120 * time.Second,
+    }
 
-	go func() {
-		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-			log.Fatalf("server error: %v", err)
-		}
-	}()
+    go func() {
+        if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+            log.Fatalf("server error: %v", err)
+        }
+    }()
 
-	// Graceful shutdown on SIGINT/SIGTERM would go here if desired
-	select {}
+    // Block forever (or implement graceful shutdown if you like)
+    select {}
 }
 
-func loadConfig() serverConfig {
-	addr := envOr("ADDR", ":8080")
-	allowed := envOr("ALLOWED_ORIGIN", "") // e.g. http://localhost:5173
-	serveStatic := envOr("SERVE_STATIC", "") // "true" to serve ./dist, or "embed" to serve from embedded FS
-	staticDir := envOr("STATIC_DIR", "dist")
+func loadConfig() (serverConfig, error) {
+    addr := envOr("ADDR", ":8080")
+    allowed := envOr("ALLOWED_ORIGIN", "")
+    serveStatic := envOr("SERVE_STATIC", "") // "", "fs", "embed"
+    staticDir := envOr("STATIC_DIR", "dist")
+    cmdPath := envOr("CLI_CMD", "")
+    fixedArgStr := envOr("CLI_ARGS", "")
 
-	allowlist := strings.Split(strings.TrimSpace(envOr("COMMAND_ALLOWLIST", "")), ",")
-	if len(allowlist) == 1 && allowlist[0] == "" {
-		allowlist = nil
-	}
+    flag.StringVar(&addr, "addr", addr, "server listen address")
+    flag.StringVar(&allowed, "allowed-origin", allowed, "allowed Origin for CORS/WS (dev: http://localhost:5173)")
+    flag.StringVar(&serveStatic, "serve-static", serveStatic, "static mode: '', 'fs', or 'embed'")
+    flag.StringVar(&staticDir, "static-dir", staticDir, "directory for static files when serve-static=fs")
+    flag.StringVar(&cmdPath, "cmd", cmdPath, "REQUIRED: path to CLI to execute")
+    flag.StringVar(&fixedArgStr, "cmd-args", fixedArgStr, "optional comma-separated fixed args passed before options")
+    flag.Parse()
 
-	// Allow overriding with flags too
-	flag.StringVar(&addr, "addr", addr, "server listen address")
-	flag.StringVar(&allowed, "allowed-origin", allowed, "CORS/WebSocket allowed origin (dev: http://localhost:5173)")
-	flag.StringVar(&serveStatic, "serve-static", serveStatic, "serve static: '', 'true', or 'embed'")
-	flag.StringVar(&staticDir, "static-dir", staticDir, "directory for static files when serve-static=true")
-	flag.Parse()
+    if cmdPath == "" {
+        return serverConfig{}, fmt.Errorf("--cmd (or CLI_CMD) is required")
+    }
 
-	return serverConfig{
-		Addr:             addr,
-		AllowedOrigin:    allowed,
-		ServeStatic:      serveStatic,
-		StaticDir:        staticDir,
-		CommandAllowlist: allowlist,
-	}
+    var fixedArgs []string
+    if s := strings.TrimSpace(fixedArgStr); s != "" {
+        // Simple CSV split; if you need quoting, extend this.
+        parts := strings.Split(s, ",")
+        for _, p := range parts {
+            p = strings.TrimSpace(p)
+            if p != "" { fixedArgs = append(fixedArgs, p) }
+        }
+    }
+
+    return serverConfig{
+        Addr:          addr,
+        AllowedOrigin: allowed,
+        ServeStatic:   serveStatic,
+        StaticDir:     staticDir,
+        CommandPath:   cmdPath,
+        FixedArgs:     fixedArgs,
+    }, nil
 }
 
 func envOr(key, def string) string {
-	if v := os.Getenv(key); v != "" {
-		return v
-	}
-	return def
+    if v := os.Getenv(key); v != "" { return v }
+    return def
 }
 
-// wsHandler upgrades to WebSocket, spawns the command, streams stdout/stderr to the client,
-// and optionally accepts stdin from the client.
-func wsHandler(w http.ResponseWriter, r *http.Request, cfg serverConfig) {
-	// Enforce origin in dev if provided
-	if cfg.AllowedOrigin != "" {
-		upgrader.CheckOrigin = func(r *http.Request) bool {
-			return r.Header.Get("Origin") == cfg.AllowedOrigin
-		}
-	}
+// --- Handlers ---
 
-	conn, err := upgrader.Upgrade(w, r, nil)
-	if err != nil {
-		log.Printf("websocket upgrade: %v", err)
-		return
-	}
-	defer conn.Close()
+func apiInitHandler(w http.ResponseWriter, r *http.Request) {
+    var req initRequest
+    if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+        http.Error(w, "invalid JSON", http.StatusBadRequest)
+        return
+    }
+    runtimeState.mu.Lock()
+    if req.Options != nil {
+        runtimeState.options = make(map[string]string, len(req.Options))
+        for k, v := range req.Options { runtimeState.options[strings.TrimSpace(k)] = v }
+    }
+    if req.Cwd != "" { runtimeState.cwd = req.Cwd }
+    runtimeState.mu.Unlock()
 
-	// Parse runRequest from query or first message
-	var rr runRequest
-	if qcmd := r.URL.Query().Get("cmd"); qcmd != "" {
-		rr.Cmd = qcmd
-		rr.Args = strings.Split(r.URL.Query().Get("args"), ",")
-		rr.Cwd = r.URL.Query().Get("cwd")
-	} else {
-		_, data, err := conn.ReadMessage()
-		if err != nil {
-			sendJSON(conn, map[string]any{"type": "error", "error": "missing run parameters"})
-			return
-		}
-		if err := json.Unmarshal(data, &rr); err != nil {
-			sendJSON(conn, map[string]any{"type": "error", "error": "invalid JSON for run parameters"})
-			return
-		}
-	}
-
-	if rr.Cmd == "" {
-		sendJSON(conn, map[string]any{"type": "error", "error": "no command specified"})
-		return
-	}
-	if !cfg.isAllowed(rr.Cmd) {
-		sendJSON(conn, map[string]any{"type": "error", "error": "command not allowed"})
-		return
-	}
-
-	ctx, cancel := context.WithCancel(r.Context())
-	defer cancel()
-
-	cmd := exec.CommandContext(ctx, rr.Cmd, rr.Args...)
-	if rr.Cwd != "" {
-		cmd.Dir = rr.Cwd
-	}
-
-	stdin, err := cmd.StdinPipe()
-	if err != nil { sendJSON(conn, map[string]any{"type":"error","error":"stdin pipe error"}); return }
-	stdout, err := cmd.StdoutPipe()
-	if err != nil { sendJSON(conn, map[string]any{"type":"error","error":"stdout pipe error"}); return }
-	stderr, err := cmd.StderrPipe()
-	if err != nil { sendJSON(conn, map[string]any{"type":"error","error":"stderr pipe error"}); return }
-
-	if err := cmd.Start(); err != nil {
-		sendJSON(conn, map[string]any{"type": "error", "error": fmt.Sprintf("start error: %v", err)})
-		return
-	}
-	sendJSON(conn, map[string]any{"type": "started", "pid": cmd.Process.Pid, "cmd": rr.Cmd, "args": rr.Args})
-
-	var wg sync.WaitGroup
-	wg.Add(2)
-
-	// Stream stdout
-	go func() {
-		defer wg.Done()
-		scanner := bufio.NewScanner(stdout)
-		scanner.Buffer(make([]byte, 64*1024), 10*1024*1024)
-		for scanner.Scan() {
-			line := scanner.Text()
-			_ = conn.WriteJSON(map[string]any{"type": "stdout", "data": line})
-		}
-		if err := scanner.Err(); err != nil {
-			_ = conn.WriteJSON(map[string]any{"type": "error", "error": fmt.Sprintf("stdout scan error: %v", err)})
-		}
-	}()
-
-	// Stream stderr
-	go func() {
-		defer wg.Done()
-		scanner := bufio.NewScanner(stderr)
-		scanner.Buffer(make([]byte, 64*1024), 10*1024*1024)
-		for scanner.Scan() {
-			line := scanner.Text()
-			_ = conn.WriteJSON(map[string]any{"type": "stderr", "data": line})
-		}
-		if err := scanner.Err(); err != nil {
-			_ = conn.WriteJSON(map[string]any{"type": "error", "error": fmt.Sprintf("stderr scan error: %v", err)})
-		}
-	}()
-
-	// Reader: accept client messages for stdin / control / keepalive
-	go func() {
-		for {
-			mt, data, err := conn.ReadMessage()
-			if err != nil {
-				// client disconnected
-				cancel()
-				return
-			}
-			if mt != websocket.TextMessage && mt != websocket.BinaryMessage {
-				continue
-			}
-			// Protocol: JSON messages of shape {type: 'stdin'|'signal'|'ping', data?: string}
-			var msg map[string]any
-			if err := json.Unmarshal(data, &msg); err == nil {
-				if t, _ := msg["type"].(string); t != "" {
-					switch t {
-					case "stdin":
-						if s, _ := msg["data"].(string); s != "" {
-							_, _ = stdin.Write([]byte(s))
-						}
-					case "signal":
-						if s, _ := msg["data"].(string); s == "SIGINT" {
-							_ = cmd.Process.Signal(os.Interrupt)
-						}
-					case "ping":
-						_ = conn.WriteJSON(map[string]any{"type": "pong", "ts": time.Now().UnixNano()})
-					}
-				}
-			}
-		}
-	}()
-
-	// Periodic ping to keep proxies/load balancers from closing idle WS
-	pingTicker := time.NewTicker(20 * time.Second)
-	defer pingTicker.Stop()
-	go func() {
-		for range pingTicker.C {
-			_ = conn.WriteControl(websocket.PingMessage, []byte("ping"), time.Now().Add(5*time.Second))
-		}
-	}()
-
-	// Wait for stdout/stderr to finish then wait on process
-	wg.Wait()
-	_ = stdin.Close()
-	err = cmd.Wait()
-	status := map[string]any{"type": "exit"}
-	if err != nil {
-		status["error"] = err.Error()
-	}
-	if cmd.ProcessState != nil {
-		status["exitCode"] = cmd.ProcessState.ExitCode()
-	}
-	_ = conn.WriteJSON(status)
+    w.Header().Set("Content-Type", "application/json")
+    _ = json.NewEncoder(w).Encode(map[string]any{"ok": true})
 }
 
-// apiRunHandler: non-streaming example (for quick tests)
-func apiRunHandler(w http.ResponseWriter, r *http.Request, cfg serverConfig) {
-	var rr runRequest
-	if err := json.NewDecoder(r.Body).Decode(&rr); err != nil {
-		http.Error(w, "invalid JSON", http.StatusBadRequest)
-		return
-	}
-	if rr.Cmd == "" || !cfg.isAllowed(rr.Cmd) {
-		http.Error(w, "command not allowed or missing", http.StatusBadRequest)
-		return
-	}
-	cmd := exec.Command(rr.Cmd, rr.Args...)
-	if rr.Cwd != "" { cmd.Dir = rr.Cwd }
-	out, err := cmd.CombinedOutput()
-	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(map[string]any{
-		"cmd": rr.Cmd, "args": rr.Args, "error": errorString(err), "output": string(out),
-	})
+// wsRunHandler upgrades to WS, starts the preconfigured CLI, streams stdout/stderr, accepts stdin, and reports exit.
+func wsRunHandler(w http.ResponseWriter, r *http.Request, cfg serverConfig) {
+    // Tighten origin per request
+    if cfg.AllowedOrigin != "" {
+        upgrader.CheckOrigin = func(r *http.Request) bool { return r.Header.Get("Origin") == cfg.AllowedOrigin }
+    }
+    conn, err := upgrader.Upgrade(w, r, nil)
+    if err != nil { log.Printf("ws upgrade: %v", err); return }
+    defer conn.Close()
+
+    // snapshot init state
+    runtimeState.mu.RLock()
+    optsCopy := make(map[string]string, len(runtimeState.options))
+    for k, v := range runtimeState.options { optsCopy[k] = v }
+    cwd := runtimeState.cwd
+    runtimeState.mu.RUnlock()
+
+    // Compose args: fixed args first, then sorted --k=v flags
+    args := make([]string, 0, len(cfg.FixedArgs)+len(optsCopy))
+    args = append(args, cfg.FixedArgs...)
+    for _, kv := range optionsToFlags(optsCopy) { args = append(args, kv) }
+
+    ctx, cancel := context.WithCancel(r.Context())
+    defer cancel()
+
+    cmd := exec.CommandContext(ctx, cfg.CommandPath, args...)
+    if cwd != "" { cmd.Dir = cwd }
+
+    stdin, err := cmd.StdinPipe()
+    if err != nil { sendJSON(conn, map[string]any{"type":"error","error":"stdin pipe error"}); return }
+    stdout, err := cmd.StdoutPipe()
+    if err != nil { sendJSON(conn, map[string]any{"type":"error","error":"stdout pipe error"}); return }
+    stderr, err := cmd.StderrPipe()
+    if err != nil { sendJSON(conn, map[string]any{"type":"error","error":"stderr pipe error"}); return }
+
+    if err := cmd.Start(); err != nil {
+        sendJSON(conn, map[string]any{"type":"error","error":fmt.Sprintf("start error: %v", err)})
+        return
+    }
+    sendJSON(conn, map[string]any{"type":"started","pid":cmd.Process.Pid,"cmd":cfg.CommandPath,"args":args})
+
+    var wg sync.WaitGroup
+    wg.Add(2)
+
+    // Stream stdout lines
+    go func() {
+        defer wg.Done()
+        scanner := bufio.NewScanner(stdout)
+        scanner.Buffer(make([]byte, 64*1024), 10*1024*1024)
+        for scanner.Scan() { sendJSON(conn, map[string]any{"type":"stdout","data":scanner.Text()}) }
+        if err := scanner.Err(); err != nil { sendJSON(conn, map[string]any{"type":"error","error":fmt.Sprintf("stdout scan error: %v", err)}) }
+    }()
+
+    // Stream stderr lines
+    go func() {
+        defer wg.Done()
+        scanner := bufio.NewScanner(stderr)
+        scanner.Buffer(make([]byte, 64*1024), 10*1024*1024)
+        for scanner.Scan() { sendJSON(conn, map[string]any{"type":"stderr","data":scanner.Text()}) }
+        if err := scanner.Err(); err != nil { sendJSON(conn, map[string]any{"type":"error","error":fmt.Sprintf("stderr scan error: %v", err)}) }
+    }()
+
+    // Reader: stdin/signal/keepalive
+    go func() {
+        for {
+            mt, data, err := conn.ReadMessage()
+            if err != nil { cancel(); return }
+            if mt != websocket.TextMessage && mt != websocket.BinaryMessage { continue }
+            var msg map[string]any
+            if json.Unmarshal(data, &msg) == nil {
+                switch msg["type"] {
+                case "stdin":
+                    if s, _ := msg["data"].(string); s != "" { _, _ = stdin.Write([]byte(s)) }
+                case "signal":
+                    if s, _ := msg["data"].(string); s == "SIGINT" { _ = cmd.Process.Signal(os.Interrupt) }
+                case "ping":
+                    sendJSON(conn, map[string]any{"type":"pong","ts":time.Now().UnixNano()})
+                }
+            }
+        }
+    }()
+
+    // Periodic WS ping (helps keep long sessions alive through proxies)
+    pingTicker := time.NewTicker(20 * time.Second)
+    defer pingTicker.Stop()
+    go func() {
+        for range pingTicker.C {
+            _ = conn.WriteControl(websocket.PingMessage, []byte("ping"), time.Now().Add(5*time.Second))
+        }
+    }()
+
+    // wait streams, then wait process
+    wg.Wait()
+    _ = stdin.Close()
+    err = cmd.Wait()
+    status := map[string]any{"type":"exit"}
+    if err != nil { status["error"] = err.Error() }
+    if cmd.ProcessState != nil { status["exitCode"] = cmd.ProcessState.ExitCode() }
+    sendJSON(conn, status)
 }
 
-func errorString(err error) string { if err == nil { return "" }; return err.Error() }
+// --- Helpers ---
 
-// withCors adds permissive CORS for dev (and sets WS upgrade headers appropriately)
+func sendJSON(conn *websocket.Conn, v any) {
+    // Best-effort send; ignore errors if the client is gone
+    _ = conn.WriteJSON(v)
+}
+
+func optionsToFlags(opts map[string]string) []string {
+    if len(opts) == 0 { return nil }
+    keys := make([]string, 0, len(opts))
+    for k := range opts { keys = append(keys, k) }
+    sort.Strings(keys)
+    out := make([]string, 0, len(keys))
+    for _, k := range keys {
+        v := opts[k]
+        k = strings.TrimSpace(k)
+        if k == "" { continue }
+        if v == "" { out = append(out, "--"+k); continue }
+        out = append(out, fmt.Sprintf("--%s=%s", k, v))
+    }
+    return out
+}
+
 func withCors(next http.Handler, allowedOrigin string) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		origin := r.Header.Get("Origin")
-		if allowedOrigin != "" && origin == allowedOrigin {
-			w.Header().Set("Access-Control-Allow-Origin", allowedOrigin)
-			w.Header().Set("Vary", "Origin")
-			w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
-			w.Header().Set("Access-Control-Allow-Methods", "GET,POST,OPTIONS")
-			w.Header().Set("Access-Control-Allow-Credentials", "true")
-		}
-		if r.Method == http.MethodOptions {
-			w.WriteHeader(http.StatusNoContent)
-			return
-		}
-		next.ServeHTTP(w, r)
-	})
+    return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+        origin := r.Header.Get("Origin")
+        if allowedOrigin != "" && origin == allowedOrigin {
+            w.Header().Set("Access-Control-Allow-Origin", allowedOrigin)
+            w.Header().Set("Vary", "Origin")
+            w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
+            w.Header().Set("Access-Control-Allow-Methods", "GET,POST,OPTIONS")
+            w.Header().Set("Access-Control-Allow-Credentials", "true")
+        }
+        if r.Method == http.MethodOptions {
+            w.WriteHeader(http.StatusNoContent)
+            return
+        }
+        next.ServeHTTP(w, r)
+    })
 }
 
-// spaFallback serves index.html for unknown paths to support client-side routing
-func spaFallback(static http.Handler, indexPath string) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Serve API/WS normally
-		if strings.HasPrefix(r.URL.Path, "/api/") || strings.HasPrefix(r.URL.Path, "/ws/") {
-			static.ServeHTTP(w, r)
-			return
-		}
-		// Try to serve the file
-		p := r.URL.Path
-		if p == "/" || path.Ext(p) == "" { // likely a SPA route
-			// Serve index.html
-			if strings.HasPrefix(indexPath, "dist/") {
-				// embedded FS path
-				f, err := embeddedDist.Open(indexPath)
-				if err != nil { http.NotFound(w, r); return }
-				defer f.Close()
-				http.ServeContent(w, r, "index.html", time.Now(), f)
-				return
-			}
-			http.ServeFile(w, r, indexPath)
-			return
-		}
-		static.ServeHTTP(w, r)
-	})
+// spaFallbackFS serves index.html from disk for unknown routes (client-side routing support).
+func spaFallbackFS(static http.Handler, indexPath string) http.Handler {
+    return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+        if strings.HasPrefix(r.URL.Path, "/api/") || strings.HasPrefix(r.URL.Path, "/ws/") {
+            static.ServeHTTP(w, r)
+            return
+        }
+        p := r.URL.Path
+        if p == "/" || path.Ext(p) == "" {
+            // Serve index.html from disk
+            data, err := os.ReadFile(indexPath)
+            if err != nil { http.NotFound(w, r); return }
+            http.ServeContent(w, r, "index.html", time.Now(), bytes.NewReader(data))
+            return
+        }
+        static.ServeHTTP(w, r)
+    })
 }
 
-// --- vite.config.ts (dev proxy) ---
-// Place this next to your Vite project (TypeScript). If using JS, use vite.config.js with equivalent fields.
-//
-// import { defineConfig } from 'vite'
-// export default defineConfig({
-//   server: {
-//     proxy: {
-//       '/api': { target: 'http://localhost:8080', changeOrigin: true },
-//       '/ws':  { target: 'ws://localhost:8080', ws: true, changeOrigin: true },
-//     }
-//   }
-// })
-
-// --- Example frontend WebSocket client code (TypeScript) ---
-// const ws = new WebSocket(`${location.origin.replace('http', 'ws')}/ws/run`);
-// ws.addEventListener('open', () => {
-//   ws.send(JSON.stringify({ cmd: 'ping', args: ['-c', '5'] })); // example command
-// });
-// ws.addEventListener('message', (ev) => {
-//   const msg = JSON.parse(ev.data);
-//   switch (msg.type) {
-//     case 'started':   console.log('started', msg); break;
-//     case 'stdout':    console.log('OUT:', msg.data); break;
-//     case 'stderr':    console.log('ERR:', msg.data); break;
-//     case 'exit':      console.log('exit', msg); break;
-//     case 'error':     console.error('error', msg.error); break;
-//   }
-// });
-// // To send stdin later:
-// // ws.send(JSON.stringify({ type: 'stdin', data: 'some input\n' }));
-
+// spaFallbackEmbed serves index.html from the embedded dist/ for unknown routes.
+func spaFallbackEmbed(static http.Handler, distFS fs.FS) http.Handler {
+    return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+        if strings.HasPrefix(r.URL.Path, "/api/") || strings.HasPrefix(r.URL.Path, "/ws/") {
+            static.ServeHTTP(w, r)
+            return
+        }
+        p := r.URL.Path
+        if p == "/" || path.Ext(p) == "" {
+            data, err := fs.ReadFile(distFS, "index.html")
+            if err != nil { http.NotFound(w, r); return }
+            http.ServeContent(w, r, "index.html", time.Now(), bytes.NewReader(data))
+            return
+        }
+        static.ServeHTTP(w, r)
+    })
+}
