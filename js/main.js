@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import {OrbitControls} from 'three/addons/controls/OrbitControls.js';
 
 function main() {
 
@@ -6,12 +7,16 @@ function main() {
     const renderer = new THREE.WebGLRenderer( { antialias: true, canvas } );
     const scene = new THREE.Scene();
 
-    const fov = 75;
+    const fov = 60;
     const aspect = 2; // the canvas default
     const near = 0.1;
-    const far = 5;
+    const far = 25;
     const camera = new THREE.PerspectiveCamera( fov, aspect, near, far );
-    camera.position.z = 2;
+    camera.position.z = 15;
+
+    const controls = new OrbitControls(camera, canvas);
+    controls.target.set(0, 2, 0);
+    controls.update();
 
     const lightColor = 0xFFFFFF;
     const lightIntensity = 3;
@@ -19,23 +24,31 @@ function main() {
     light.position.set(-1, 2, 4);
     scene.add(light);
 
-    const boxWidth = 1;
-    const boxHeight = 1;
-    const boxDepth = 1;
-    const geometry = new THREE.BoxGeometry( boxWidth, boxHeight, boxDepth );
+    const radius = 1.0;
+    const height = 5;  
+    const radialSegments = 6;  
+    const shape = new THREE.CylinderGeometry(radius, radius, height, radialSegments);
 
-	function makeInstance( geometry, color, x ) {
+	function makeInstance( geometry, color, x, y, z ) {
 		const material = new THREE.MeshPhongMaterial( { color } );
-		const cube = new THREE.Mesh( geometry, material );
-		scene.add( cube );
-		cube.position.x = x;
-		return cube;
+		const shape = new THREE.Mesh( geometry, material );
+		scene.add( shape );
+		shape.position.x = x;
+		shape.position.y = y;
+		shape.position.z = z;
+		return shape;
 	}
 
-    const cubes = [
-      makeInstance(geometry, 0x44aa88,  0),
-      makeInstance(geometry, 0x8844aa, - 2),
-      makeInstance(geometry, 0xaa8844,  2),
+    const sqrt3 = Math.sqrt(3.0);
+
+    const shapes = [
+      makeInstance(shape, 0x44aa88, 0, 0, 0),
+      makeInstance(shape, 0x8844aa, sqrt3, 0, 0),
+      makeInstance(shape, 0xaa8844, -sqrt3, 0, 0),
+      makeInstance(shape, 0x2266aa, sqrt3/2.0, 0, 3/2),
+      makeInstance(shape, 0x6622aa, -sqrt3/2, 0, 3/2),
+      makeInstance(shape, 0xaa6622, sqrt3/2, 0, -3/2),
+      makeInstance(shape, 0x886622, -sqrt3/2, 0, -3/2),
     ];
 
     function resizeRendererToDisplaySize(renderer) {
@@ -57,13 +70,6 @@ function main() {
         camera.aspect = canvas.clientWidth / canvas.clientHeight;
         camera.updateProjectionMatrix();
       }
-
-      cubes.forEach((cube, ndx) => {
-        const speed = 1 + ndx * .1;
-        const rot = time * speed;
-        cube.rotation.x = rot;
-        cube.rotation.y = rot;
-      });
 
       renderer.render( scene, camera );
       requestAnimationFrame( render );
