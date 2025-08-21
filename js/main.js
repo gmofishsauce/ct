@@ -66,7 +66,33 @@ function main() {
       return needResize;
     }
 
+    const actualScale = [ 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, ];
+    const targetScale = [ 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, ];
+    let previousUpdate = 0;
+
     function render( time ) {
+
+      // Every 3 seconds change the target height of all the bars
+      if (time - previousUpdate > 1500) {
+        previousUpdate = time;
+        shapes.forEach((shape, ndx) => {
+          targetScale[ndx] = 1.5 - Math.random();
+        });
+      }
+
+      // Every frame converges the bars on the targets by small steps
+      shapes.forEach((shape, ndx) => {
+        let diff = targetScale[ndx] - actualScale[ndx]
+        if (Math.abs(diff) > 0.011) {
+            if (diff > 0) {
+              actualScale[ndx] += 0.01;
+            } else {
+              actualScale[ndx] -= 0.01;
+            }
+            shapes[ndx].scale.y = actualScale[ndx];
+            shapes[ndx].position.y = height * (actualScale[ndx]/2)
+        }
+      });
 
       if (resizeRendererToDisplaySize(renderer)) {
         const canvas = renderer.domElement;
