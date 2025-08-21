@@ -19,10 +19,14 @@ function main() {
     controls.update();
 
     const lightColor = 0xFFFFFF;
-    const lightIntensity = 3;
-    const light = new THREE.DirectionalLight(lightColor, lightIntensity);
-    light.position.set(-1, 2, 4);
-    scene.add(light);
+    let lightIntensity = 2;
+    const ambientLight = new THREE.AmbientLight(lightColor, lightIntensity);
+    scene.add(ambientLight);
+
+    lightIntensity = 3;
+    const directionalLight = new THREE.DirectionalLight(lightColor, 3);
+    directionalLight.position.set(-1, 2, 4);
+    scene.add(directionalLight);
 
     const radius = 1.0;
     const height = 5;  
@@ -63,7 +67,6 @@ function main() {
     }
 
     function render( time ) {
-      time *= 0.001;  // convert time to seconds
 
       if (resizeRendererToDisplaySize(renderer)) {
         const canvas = renderer.domElement;
