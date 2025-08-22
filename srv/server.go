@@ -1,12 +1,12 @@
 // main.go
 // Minimal Gorilla-based Go server for a single, preconfigured CLI with streaming WebSocket I/O.
 //
-// ✅ Dev mode: run alongside Vite; only exposes /api and /ws. Use Vite proxy to forward requests.
-// ✅ Prod mode: also serves Vite-built static files from ./dist or from an embedded FS.
-// ✅ Security: never executes arbitrary commands. The CLI path is configured at startup (flag/env).
-// ✅ Init API: front end calls /api/init once with { options: {key: value}, cwd?: "..." }.
+// Dev mode: run alongside Vite; only exposes /api and /ws. Use Vite proxy to forward requests.
+// Prod mode: also serves Vite-built static files from ./dist or from an embedded FS.
+// Security: never executes arbitrary commands. The CLI path is configured at startup (flag/env).
+// Init API: front end calls /api/init once with { options: {key: value}, cwd?: "..." }.
 //    Those options are converted to flags like --key=value when launching the CLI.
-// ✅ WS streaming: /ws/run spawns the CLI with the current options; streams stdout/stderr,
+// WS streaming: /ws/run spawns the CLI with the current options; streams stdout/stderr,
 //    accepts stdin via messages, and reports exit status.
 //
 // Flags / env vars:
