@@ -4,10 +4,11 @@
 # We have Javascript visualization engine, a Golang server, and a C++ binary built from
 # from source in this repo, so the excludes are somewhat involved.
 
-# We have a local stockfish binary built from a zipfile.
+# We have a local stockfish binary built from a zipfile and a server.
 # Don't commit the stockfish source/build tree or binary; just commit the downloaded zip.
 sf/Stockfish-master
 sf/stockfish
+srv/srv
 
 # We have a Javascript front end we build with Vite 
 js/node_modules
