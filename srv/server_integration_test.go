@@ -88,8 +88,8 @@ func TestServerIntegration(t *testing.T) {
 	if err := conn.ReadJSON(&recv); err != nil {
 		t.Fatalf("failed to read from websocket: %v", err)
 	}
-	if recv["type"] != "stdout" {
-		t.Fatalf("expected type 'started', got %v", recv["type"])
+	if recv["type"] != "stdout" || recv["data"] != "hello" {
+		t.Fatalf("expected type 'started', got %v %v", recv["type"], recv["data"])
 	}
-	t.Logf("Received expected type: %v", recv["type"])
+	t.Logf("Received expected type: %v %v", recv["type"], recv["data"])
 }

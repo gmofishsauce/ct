@@ -3,9 +3,7 @@
 //
 // Dev mode: run alongside Vite; only exposes /api and /ws. Use Vite proxy to forward requests.
 // Prod mode: also serves Vite-built static files from ./dist or from an embedded FS.
-// Security: never executes arbitrary commands. The CLI path is configured at startup (flag/env).
-// Init API: front end calls /api/init once with { options: {key: value}, cwd?: "..." }.
-//    Those options are converted to flags like --key=value when launching the CLI.
+// Security: the CLI path is configured at startup (flag/env).
 // WS streaming: /ws/run spawns the CLI with the current options; streams stdout/stderr,
 //    accepts stdin via messages, and reports exit status.
 //
@@ -18,8 +16,7 @@
 //   --cmd-args (CLI_ARGS)        : OPTIONAL. Comma-separated fixed args always passed before options (e.g., "--fast,-n,10")
 //
 // Endpoints:
-//   GET  /api/health
-//   POST /api/init        {"options": {"foo":"bar"}, "cwd":"/path/optional"}
+//   GET  /api/health      HTTP GET: {"ok":true|"error":"message"}
 //   GET  /ws/run          WebSocket: server immediately starts the configured CLI with current options
 //                         Messages from server: {type:"started"|"stdout"|"stderr"|"exit"|"error", ...}
 //                         Messages to server  : {type:"stdin"|"signal"|"ping", data?: string}
@@ -74,20 +71,6 @@ type serverConfig struct {
     FixedArgs     []string // from CLI_ARGS (comma-separated)
 }
 
-type initRequest struct {
-    Options map[string]string `json:"options"`
-    Cwd     string            `json:"cwd,omitempty"`
-}
-
-// runtimeState holds the latest init() values used when launching the CLI.
-var runtimeState = struct {
-    mu      sync.RWMutex
-    options map[string]string
-    cwd     string
-}{
-    options: map[string]string{},
-}
-
 var upgrader = websocket.Upgrader{
     ReadBufferSize:  32 * 1024,
     WriteBufferSize: 32 * 1024,
@@ -110,9 +93,6 @@ func main() {
         w.WriteHeader(http.StatusOK)
         _, _ = w.Write([]byte(`{"ok":true}`))
     }).Methods(http.MethodGet)
-
-    // Init API
-    r.HandleFunc("/api/init", func(w http.ResponseWriter, r *http.Request) { apiInitHandler(w, r) }).Methods(http.MethodPost)
 
     // WebSocket run endpoint
     r.HandleFunc("/ws/run", func(w http.ResponseWriter, r *http.Request) { wsRunHandler(w, r, cfg) }).Methods(http.MethodGet)
@@ -200,24 +180,6 @@ func envOr(key, def string) string {
 
 // --- Handlers ---
 
-func apiInitHandler(w http.ResponseWriter, r *http.Request) {
-    var req initRequest
-    if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-        http.Error(w, "invalid JSON", http.StatusBadRequest)
-        return
-    }
-    runtimeState.mu.Lock()
-    if req.Options != nil {
-        runtimeState.options = make(map[string]string, len(req.Options))
-        for k, v := range req.Options { runtimeState.options[strings.TrimSpace(k)] = v }
-    }
-    if req.Cwd != "" { runtimeState.cwd = req.Cwd }
-    runtimeState.mu.Unlock()
-
-    w.Header().Set("Content-Type", "application/json")
-    _ = json.NewEncoder(w).Encode(map[string]any{"ok": true})
-}
-
 // wsRunHandler upgrades to WS, starts the preconfigured CLI, streams stdout/stderr, accepts stdin, and reports exit.
 func wsRunHandler(w http.ResponseWriter, r *http.Request, cfg serverConfig) {
     // Tighten origin per request
@@ -228,23 +190,10 @@ func wsRunHandler(w http.ResponseWriter, r *http.Request, cfg serverConfig) {
     if err != nil { log.Printf("ws upgrade: %v", err); return }
     defer conn.Close()
 
-    // snapshot init state
-    runtimeState.mu.RLock()
-    optsCopy := make(map[string]string, len(runtimeState.options))
-    for k, v := range runtimeState.options { optsCopy[k] = v }
-    cwd := runtimeState.cwd
-    runtimeState.mu.RUnlock()
-
-    // Compose args: fixed args first, then sorted --k=v flags
-    args := make([]string, 0, len(cfg.FixedArgs)+len(optsCopy))
-    args = append(args, cfg.FixedArgs...)
-    for _, kv := range optionsToFlags(optsCopy) { args = append(args, kv) }
-
     ctx, cancel := context.WithCancel(r.Context())
     defer cancel()
 
-    cmd := exec.CommandContext(ctx, cfg.CommandPath, args...)
-    if cwd != "" { cmd.Dir = cwd }
+    cmd := exec.CommandContext(ctx, cfg.CommandPath, cfg.FixedArgs...)
 
     stdin, err := cmd.StdinPipe()
     if err != nil { sendJSON(conn, map[string]any{"type":"error","error":"stdin pipe error"}); return }
@@ -257,7 +206,7 @@ func wsRunHandler(w http.ResponseWriter, r *http.Request, cfg serverConfig) {
         sendJSON(conn, map[string]any{"type":"error","error":fmt.Sprintf("start error: %v", err)})
         return
     }
-    sendJSON(conn, map[string]any{"type":"started","pid":cmd.Process.Pid,"cmd":cfg.CommandPath,"args":args})
+    sendJSON(conn, map[string]any{"type":"started","pid":cmd.Process.Pid,"cmd":cfg.CommandPath})
 
     var wg sync.WaitGroup
     wg.Add(2)
