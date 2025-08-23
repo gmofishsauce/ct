@@ -217,8 +217,10 @@ func wsRunHandler(w http.ResponseWriter, r *http.Request, cfg serverConfig) {
         scanner := bufio.NewScanner(stdout)
         scanner.Buffer(make([]byte, 64*1024), 10*1024*1024)
         for scanner.Scan() { sendJSON(conn, map[string]any{"type":"stdout","data":scanner.Text()}) }
-        if err := scanner.Err(); err != nil { sendJSON(conn, map[string]any{"type":"error","error":fmt.Sprintf("stdout scan error: %v", err)}) }
-    }()
+        if err := scanner.Err(); err != nil {
+			sendJSON(conn, map[string]any{"type":"error","error":fmt.Sprintf("stdout scan error: %v", err)})
+		}
+	}()
 
     // Stream stderr lines
     go func() {
@@ -226,7 +228,9 @@ func wsRunHandler(w http.ResponseWriter, r *http.Request, cfg serverConfig) {
         scanner := bufio.NewScanner(stderr)
         scanner.Buffer(make([]byte, 64*1024), 10*1024*1024)
         for scanner.Scan() { sendJSON(conn, map[string]any{"type":"stderr","data":scanner.Text()}) }
-        if err := scanner.Err(); err != nil { sendJSON(conn, map[string]any{"type":"error","error":fmt.Sprintf("stderr scan error: %v", err)}) }
+        if err := scanner.Err(); err != nil {
+			sendJSON(conn, map[string]any{"type":"error","error":fmt.Sprintf("stderr scan error: %v", err)})
+		}
     }()
 
     // Reader: stdin/signal/keepalive
