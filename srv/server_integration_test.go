@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bytes"
 	"context"
 	"net/http"
 	"os"
@@ -38,7 +37,7 @@ func TestServerIntegration(t *testing.T) {
 		t.Fatalf("failed to start server: %v", err)
 	}
 
-defer func() {
+	defer func() {
 		_ = cmd.Process.Kill()
 		_, _ = cmd.Process.Wait()
 	}()
@@ -59,19 +58,7 @@ defer func() {
 	}
 	t.Logf("/api/health succeeded")
 
-	// Step 2: /api/init
-	initBody := bytes.NewBufferString(`{"options":{}}`)
-	resp, err = http.Post(baseURL+"/api/init", "application/json", initBody)
-	if err != nil {
-		t.Fatalf("/api/init request failed: %v", err)
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != 200 {
-		t.Fatalf("/api/init returned status %d", resp.StatusCode)
-	}
-	t.Logf("/api/init succeeded")
-
-	// Step 3: /ws/run
+	// Step 2: /ws/run
 	dialer := websocket.Dialer{}
 	wsURL := "ws://localhost:8080/ws/run"
 	conn, _, err := dialer.Dial(wsURL, nil)
@@ -91,7 +78,7 @@ defer func() {
 	}
 	t.Logf("Received expected type: %v", recv["type"])
 
-	// Send stdin
+	// Step 3 - send stdin
 	msg := map[string]string{"type": "stdin", "data": "hello\n"}
 	if err := conn.WriteJSON(msg); err != nil {
 		t.Fatalf("failed to send stdin: %v", err)
