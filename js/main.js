@@ -72,7 +72,7 @@ function main() {
 
     function render( time ) {
 
-      // Every 3 seconds change the target height of all the bars
+      // Every so often change the target height of all the bars
       if (time - previousUpdate > 1500) {
         previousUpdate = time;
         shapes.forEach((shape, ndx) => {
@@ -105,7 +105,6 @@ function main() {
     }
 
     requestAnimationFrame( render );
-
 }
 
 main();

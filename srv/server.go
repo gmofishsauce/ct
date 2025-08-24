@@ -138,7 +138,7 @@ func loadConfig() (serverConfig, error) {
     allowed := envOr("ALLOWED_ORIGIN", "")
     serveStatic := envOr("SERVE_STATIC", "") // "", "fs", "embed"
     staticDir := envOr("STATIC_DIR", "dist")
-    cmdPath := envOr("CLI_CMD", "")
+    cmdPath := envOr("CLI_CMD", "../sf/stockfish")
     fixedArgStr := envOr("CLI_ARGS", "")
 
     flag.StringVar(&addr, "addr", addr, "server listen address")
@@ -216,7 +216,10 @@ func wsRunHandler(w http.ResponseWriter, r *http.Request, cfg serverConfig) {
         defer wg.Done()
         scanner := bufio.NewScanner(stdout)
         scanner.Buffer(make([]byte, 64*1024), 10*1024*1024)
-        for scanner.Scan() { sendJSON(conn, map[string]any{"type":"stdout","data":scanner.Text()}) }
+        for scanner.Scan() {
+			log.Printf("From stockfish: %s\n", scanner.Text())
+			sendJSON(conn, map[string]any{"type":"stdout","data":scanner.Text()})
+		}
         if err := scanner.Err(); err != nil {
 			sendJSON(conn, map[string]any{"type":"error","error":fmt.Sprintf("stdout scan error: %v", err)})
 		}
@@ -239,6 +242,9 @@ func wsRunHandler(w http.ResponseWriter, r *http.Request, cfg serverConfig) {
             mt, data, err := conn.ReadMessage()
             if err != nil { cancel(); return }
             if mt != websocket.TextMessage && mt != websocket.BinaryMessage { continue }
+			if mt == websocket.TextMessage {
+				log.Printf("server received: %s\n", string(data))
+			}
             var msg map[string]any
             if json.Unmarshal(data, &msg) == nil {
                 switch msg["type"] {
@@ -275,6 +281,7 @@ func wsRunHandler(w http.ResponseWriter, r *http.Request, cfg serverConfig) {
 // --- Helpers ---
 
 func sendJSON(conn *websocket.Conn, v any) {
+	log.Printf("sendJSON(%v)\n", v)
     // Best-effort send; ignore errors if the client is gone
     _ = conn.WriteJSON(v)
 }
