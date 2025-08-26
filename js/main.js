@@ -66,6 +66,47 @@ function main() {
       return needResize;
     }
 
+    // --- Create a texture with text ---
+    function createLabelTexture(text) {
+      const size = 256; // keep it power of two
+      const offscreenCanvas = document.createElement('canvas');
+      offscreenCanvas.width = size;
+      offscreenCanvas.height = size;
+      const ctx = offscreenCanvas.getContext('2d');
+
+      // Background transparent
+      ctx.clearRect(0, 0, size, size);
+
+      // Text styling
+      ctx.fillStyle = '#333';
+      ctx.font = '48px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(text, size / 2, size / 2);
+
+      const texture = new THREE.CanvasTexture(offscreenCanvas);
+      texture.needsUpdate = true;
+      return texture;
+    }
+
+    // Apply label as a separate mesh on top cap
+    const labelTexture = createLabelTexture('Label');
+    const labelMaterial = new THREE.MeshBasicMaterial({
+      map: labelTexture,
+      color: 0,
+      transparent: true, // keep background transparent
+      side: THREE.DoubleSide
+    });
+
+    // Circle geometry matching the cylinder top (radius=1, 6 segments for hex alignment not needed)
+    const labelGeometry = new THREE.CircleGeometry(1, 64); 
+    const labelMesh = new THREE.Mesh(labelGeometry, labelMaterial);
+
+    // Position the label just above the cylinder top
+    labelMesh.rotation.x = -Math.PI / 2; // orient flat
+    labelMesh.position.y = 6 + 0.01; // top cap (height/2), slightly offset
+    scene.add(labelMesh);
+
     const actualScale = [ 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, ];
     const targetScale = [ 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, ];
     let previousUpdate = 0;
