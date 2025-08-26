@@ -31,28 +31,79 @@ function main() {
     const radius = 1.0;
     const height = 5;  
     const radialSegments = 6;  
-    const shape = new THREE.CylinderGeometry(radius, radius, height, radialSegments);
+    const hexCyl = new THREE.CylinderGeometry(radius, radius, height, radialSegments);
 
-	function makeInstance( geometry, color, x, y, z ) {
+    function makeCylInstance( geometry, color, x, y, z ) {
 		const material = new THREE.MeshPhongMaterial( { color } );
-		const shape = new THREE.Mesh( geometry, material );
-		scene.add( shape );
-		shape.position.x = x;
-		shape.position.y = y;
-		shape.position.z = z;
-		return shape;
+		const hexCyl = new THREE.Mesh( geometry, material );
+		scene.add( hexCyl );
+		hexCyl.position.x = x;
+		hexCyl.position.y = y;
+		hexCyl.position.z = z;
+		return hexCyl;
 	}
+
+    // Circle geometry matching the cylinder top (radius=1, 6 segments for hex alignment not needed)
+    const labelGeometry = new THREE.CircleGeometry(1, 64); 
+
+    function makeLabelInstance(geometry, text, xPos, yPos, zPos) {
+        const size = 256; // keep it power of two
+        const offscreenCanvas = document.createElement('canvas');
+        offscreenCanvas.width = size;
+        offscreenCanvas.height = size;
+        const ctx = offscreenCanvas.getContext('2d');
+
+        // Background transparent
+        ctx.clearRect(0, 0, size, size);
+
+        // Text styling
+        ctx.fillStyle = '#FFFFFF';
+        ctx.font = '48px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'bottom';
+        ctx.fillText(text, size / 2, size / 2);
+
+        const texture = new THREE.CanvasTexture(offscreenCanvas);
+        texture.needsUpdate = true;
+
+        const labelMaterial = new THREE.MeshBasicMaterial({
+            map: texture,
+            color: 0xFFFFFF,
+            transparent: true, // keep background transparent
+            side: THREE.DoubleSide
+        });
+
+        const labelMesh = new THREE.Mesh(labelGeometry, labelMaterial);
+
+        // Position the label just above the cylinder top
+        labelMesh.rotation.x = 0; // vertical; use -Math.PI / 2 to make flat
+        labelMesh.position.x = xPos;
+        labelMesh.position.y = yPos;
+        labelMesh.position.z = zPos;
+        scene.add(labelMesh);
+        return labelMesh;
+    }
 
     const sqrt3 = Math.sqrt(3.0);
 
-    const shapes = [
-      makeInstance(shape, 0x44aa88, 0, 0, 0),
-      makeInstance(shape, 0x8844aa, sqrt3, 0, 0),
-      makeInstance(shape, 0xaa8844, -sqrt3, 0, 0),
-      makeInstance(shape, 0x2266aa, sqrt3/2.0, 0, 3/2),
-      makeInstance(shape, 0x6622aa, -sqrt3/2, 0, 3/2),
-      makeInstance(shape, 0xaa6622, sqrt3/2, 0, -3/2),
-      makeInstance(shape, 0x886622, -sqrt3/2, 0, -3/2),
+    const hexCyls = [
+        makeCylInstance(hexCyl, 0x44aa88, 0, 0, 0),
+        makeCylInstance(hexCyl, 0x8844aa, sqrt3, 0, 0),
+        makeCylInstance(hexCyl, 0xaa8844, -sqrt3, 0, 0),
+        makeCylInstance(hexCyl, 0x2266aa, sqrt3/2.0, 0, 3/2),
+        makeCylInstance(hexCyl, 0x6622aa, -sqrt3/2, 0, 3/2),
+        makeCylInstance(hexCyl, 0xaa6622, sqrt3/2, 0, -3/2),
+        makeCylInstance(hexCyl, 0x886622, -sqrt3/2, 0, -3/2),
+    ];
+
+    const labels = [
+        makeLabelInstance(labelGeometry, "start", 0, 5, 0),
+        makeLabelInstance(labelGeometry, "e4", sqrt3, 5, 0),
+        makeLabelInstance(labelGeometry, "d4", -sqrt3, 5, 0),
+        makeLabelInstance(labelGeometry, "Nc3", sqrt3/2.0, 5, 3/2),
+        makeLabelInstance(labelGeometry, "Nf3", -sqrt3/2, 5, 3/2),
+        makeLabelInstance(labelGeometry, "c4", sqrt3/2, 5, -3/2),
+        makeLabelInstance(labelGeometry, "b3", -sqrt3/2, 5, -3/2),
     ];
 
     function resizeRendererToDisplaySize(renderer) {
@@ -66,47 +117,6 @@ function main() {
       return needResize;
     }
 
-    // --- Create a texture with text ---
-    function createLabelTexture(text) {
-      const size = 256; // keep it power of two
-      const offscreenCanvas = document.createElement('canvas');
-      offscreenCanvas.width = size;
-      offscreenCanvas.height = size;
-      const ctx = offscreenCanvas.getContext('2d');
-
-      // Background transparent
-      ctx.clearRect(0, 0, size, size);
-
-      // Text styling
-      ctx.fillStyle = '#333';
-      ctx.font = '48px sans-serif';
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      ctx.fillText(text, size / 2, size / 2);
-
-      const texture = new THREE.CanvasTexture(offscreenCanvas);
-      texture.needsUpdate = true;
-      return texture;
-    }
-
-    // Apply label as a separate mesh on top cap
-    const labelTexture = createLabelTexture('Label');
-    const labelMaterial = new THREE.MeshBasicMaterial({
-      map: labelTexture,
-      color: 0,
-      transparent: true, // keep background transparent
-      side: THREE.DoubleSide
-    });
-
-    // Circle geometry matching the cylinder top (radius=1, 6 segments for hex alignment not needed)
-    const labelGeometry = new THREE.CircleGeometry(1, 64); 
-    const labelMesh = new THREE.Mesh(labelGeometry, labelMaterial);
-
-    // Position the label just above the cylinder top
-    labelMesh.rotation.x = -Math.PI / 2; // orient flat
-    labelMesh.position.y = 6 + 0.01; // top cap (height/2), slightly offset
-    scene.add(labelMesh);
-
     const actualScale = [ 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, ];
     const targetScale = [ 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, ];
     let previousUpdate = 0;
@@ -116,13 +126,13 @@ function main() {
       // Every so often change the target height of all the bars
       if (time - previousUpdate > 1500) {
         previousUpdate = time;
-        shapes.forEach((shape, ndx) => {
+        hexCyls.forEach((hexCyl, ndx) => {
           targetScale[ndx] = 1.5 - Math.random();
         });
       }
 
       // Every frame converges the bars on the targets by small steps
-      shapes.forEach((shape, ndx) => {
+      hexCyls.forEach((hexCyl, ndx) => {
         let diff = targetScale[ndx] - actualScale[ndx]
         if (Math.abs(diff) > 0.011) {
             if (diff > 0) {
@@ -130,8 +140,9 @@ function main() {
             } else {
               actualScale[ndx] -= 0.01;
             }
-            shapes[ndx].scale.y = actualScale[ndx];
-            shapes[ndx].position.y = height * (actualScale[ndx]/2)
+            hexCyls[ndx].scale.y = actualScale[ndx];
+            hexCyls[ndx].position.y = height * (actualScale[ndx]/2) - height/2;
+            labels[ndx].position.y = 3+(height * (actualScale[ndx]/2) - height/2);
         }
       });
 
