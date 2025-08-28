@@ -31,7 +31,7 @@ function main() {
     controls.update();
 
     // Well, we need some actors before we can have action...
-    const height = 5;  
+    const height = 3;  
     const radius = 1.0;
     const radialSegments = 6;  
     const cylGeometry = new THREE.CylinderGeometry(radius, radius, height, radialSegments);
@@ -77,7 +77,6 @@ function main() {
 
         const labelMesh = new THREE.Mesh(labelGeometry, labelMaterial);
 
-        // Position the label just above the cylinder top
         labelMesh.rotation.x = 0; // vertical; use -Math.PI / 2 to make flat
         labelMesh.position.x = xPos;
         labelMesh.position.y = yPos;
@@ -148,7 +147,7 @@ function main() {
             }
             group.children[0].scale.y = actualScale[ndx];
             group.children[0].position.y = height * (actualScale[ndx]/2) - height/2;
-            group.children[1].position.y = (height * actualScale[ndx]) / 2 + 0.01;
+            group.children[1].position.y = height * (actualScale[ndx])   - height/2 + 0.01;
         }
       });
 
