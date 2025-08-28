@@ -7,6 +7,18 @@ function main() {
     const renderer = new THREE.WebGLRenderer( { antialias: true, canvas } );
     const scene = new THREE.Scene();
 
+    // Lights!
+    const lightColor = 0xFFFFFF;
+    let lightIntensity = 2;
+    const ambientLight = new THREE.AmbientLight(lightColor, lightIntensity);
+    scene.add(ambientLight);
+
+    lightIntensity = 3;
+    const directionalLight = new THREE.DirectionalLight(lightColor, 3);
+    directionalLight.position.set(-1, 2, 4);
+    scene.add(directionalLight);
+
+    // Camera!
     const fov = 60;
     const aspect = 2; // the canvas default
     const near = 0.1;
@@ -18,25 +30,15 @@ function main() {
     controls.target.set(0, 2, 0);
     controls.update();
 
-    const lightColor = 0xFFFFFF;
-    let lightIntensity = 2;
-    const ambientLight = new THREE.AmbientLight(lightColor, lightIntensity);
-    scene.add(ambientLight);
-
-    lightIntensity = 3;
-    const directionalLight = new THREE.DirectionalLight(lightColor, 3);
-    directionalLight.position.set(-1, 2, 4);
-    scene.add(directionalLight);
-
-    const radius = 1.0;
+    // Well, we need some actors before we can have action...
     const height = 5;  
+    const radius = 1.0;
     const radialSegments = 6;  
-    const hexCyl = new THREE.CylinderGeometry(radius, radius, height, radialSegments);
+    const cylGeometry = new THREE.CylinderGeometry(radius, radius, height, radialSegments);
 
     function makeCylInstance( geometry, color, x, y, z ) {
 		const material = new THREE.MeshPhongMaterial( { color } );
 		const hexCyl = new THREE.Mesh( geometry, material );
-		scene.add( hexCyl );
 		hexCyl.position.x = x;
 		hexCyl.position.y = y;
 		hexCyl.position.z = z;
@@ -80,31 +82,35 @@ function main() {
         labelMesh.position.x = xPos;
         labelMesh.position.y = yPos;
         labelMesh.position.z = zPos;
-        scene.add(labelMesh);
         return labelMesh;
     }
 
     const sqrt3 = Math.sqrt(3.0);
+    const CYL = 0;
+    const LAB = 1;
 
-    const hexCyls = [
-        makeCylInstance(hexCyl, 0x44aa88, 0, 0, 0),
-        makeCylInstance(hexCyl, 0x8844aa, sqrt3, 0, 0),
-        makeCylInstance(hexCyl, 0xaa8844, -sqrt3, 0, 0),
-        makeCylInstance(hexCyl, 0x2266aa, sqrt3/2.0, 0, 3/2),
-        makeCylInstance(hexCyl, 0x6622aa, -sqrt3/2, 0, 3/2),
-        makeCylInstance(hexCyl, 0xaa6622, sqrt3/2, 0, -3/2),
-        makeCylInstance(hexCyl, 0x886622, -sqrt3/2, 0, -3/2),
+    function makeGroup(color, text, x, y, z) {
+        const cyl = makeCylInstance(cylGeometry, color, 0, 0, 0);
+        const lab = makeLabelInstance(labelGeometry, text, 0, height/2+0.1, 0);
+        const group = new THREE.Group();
+        group.add(cyl);
+        group.add(lab);
+        scene.add(group);
+        group.position.set(x, y, z);
+        return group;
+    }
+
+    const groups = [
+        makeGroup(0x44aa88, "start", 0,        0, 0),
+        makeGroup(0x8844aa, "e4",    sqrt3,    0, 0),
+        makeGroup(0xaa8844, "d4",    -sqrt3,   0, 0),
+        makeGroup(0x2266aa, "Nc3",   sqrt3/2,  0, 3/2),
+        makeGroup(0x6622aa, "Nf3",   -sqrt3/2, 0, 3/2),
+        makeGroup(0xaa6622, "c4",    sqrt3/2,  0, -3/2),
+        makeGroup(0x886622, "b3",    -sqrt3/2, 0, -3/2),
     ];
 
-    const labels = [
-        makeLabelInstance(labelGeometry, "start", 0, 5, 0),
-        makeLabelInstance(labelGeometry, "e4", sqrt3, 5, 0),
-        makeLabelInstance(labelGeometry, "d4", -sqrt3, 5, 0),
-        makeLabelInstance(labelGeometry, "Nc3", sqrt3/2.0, 5, 3/2),
-        makeLabelInstance(labelGeometry, "Nf3", -sqrt3/2, 5, 3/2),
-        makeLabelInstance(labelGeometry, "c4", sqrt3/2, 5, -3/2),
-        makeLabelInstance(labelGeometry, "b3", -sqrt3/2, 5, -3/2),
-    ];
+    // OK, Action!
 
     function resizeRendererToDisplaySize(renderer) {
       const canvas = renderer.domElement;
@@ -126,13 +132,13 @@ function main() {
       // Every so often change the target height of all the bars
       if (time - previousUpdate > 1500) {
         previousUpdate = time;
-        hexCyls.forEach((hexCyl, ndx) => {
-          targetScale[ndx] = 1.5 - Math.random();
+        groups.forEach((unused, ndx) => {
+          targetScale[ndx] = 1.5 - Math.random(); // range 0.5..1.5
         });
       }
 
       // Every frame converges the bars on the targets by small steps
-      hexCyls.forEach((hexCyl, ndx) => {
+      groups.forEach((group, ndx) => {
         let diff = targetScale[ndx] - actualScale[ndx]
         if (Math.abs(diff) > 0.011) {
             if (diff > 0) {
@@ -140,9 +146,9 @@ function main() {
             } else {
               actualScale[ndx] -= 0.01;
             }
-            hexCyls[ndx].scale.y = actualScale[ndx];
-            hexCyls[ndx].position.y = height * (actualScale[ndx]/2) - height/2;
-            labels[ndx].position.y = 3+(height * (actualScale[ndx]/2) - height/2);
+            group.children[0].scale.y = actualScale[ndx];
+            group.children[0].position.y = height * (actualScale[ndx]/2) - height/2;
+            group.children[1].position.y = (height * actualScale[ndx]) / 2 + 0.01;
         }
       });
 

@@ -15,18 +15,25 @@
       height: 100%;
       display: block;
     }
+    .scroll-container {
+      height: 100px;
+      overflow: auto;
+      border: 1px solid #ccc;
+      padding: 10px;
+    }
     </style>
   </head>
   <body>
     <button id="init">Init Worker</button>
     <button id="send">Send Hello</button>
-    <pre id="log"></pre>
+    <div id="log" class="scroll-container">
+    </div>
     <canvas id="c"></canvas>
   </body>
   <script>
     const log = (msg) => {
       const el = document.getElementById("log");
-      el.textContent = msg + "\n";
+      el.textContent += msg + "\n";
     };
   
     let worker = null;
