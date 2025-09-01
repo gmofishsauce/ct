@@ -9,55 +9,56 @@
     html, body {
       margin: 0;
       height: 100%;
+      font-family: Arial, Helvetica, sans-serif;
+    }
+    #tools {
+      position: fixed;
+      top: 0; /* Positions the bar at the very top of the viewport */
+      left: 0; /* Aligns the bar to the left edge of the viewport */
+      width: 100%; /* Makes the bar span the full width of the viewport */
+      background-color: #333; /* Example background color */
+      color: white; /* Example text color */
+      padding: 10px; /* Example padding */
+      z-index: 1000; /* Ensures the bar appears above other content */
     }
     #c {
       width: 100%;
       height: 100%;
       display: block;
     }
-    .scroll-container {
-      height: 100px;
-      overflow: auto;
-      border: 1px solid #ccc;
-      padding: 10px;
+    #status {
+      position: fixed;
+      bottom: 0; /* Positions the bar at the very top of the viewport */
+      left: 0; /* Aligns the bar to the left edge of the viewport */
+      width: 100%; /* Makes the bar span the full width of the viewport */
+      background-color: #333; /* Example background color */
+      color: white; /* Example text color */
+      padding: 10px; /* Example padding */
+      z-index: 1000; /* Ensures the bar appears above other content */
+    }
+    <!--
+    #msgtext {
+      font-family: Arial, Helvetica, sans-serif;
+    }
+    -->
+    #go {
+      font-weight: bold;
+    }
+    canvas:focus {
+      outline:none;
     }
     </style>
   </head>
   <body>
-    <button id="init">Init Worker</button>
-    <button id="send">Send Hello</button>
-    <div id="log" class="scroll-container">
+    <div id="tools">
+      <input id="action" type="text" required size="80" />
+      <button id="go">Go</button>
     </div>
-    <canvas id="c"></canvas>
+    <canvas tabindex=0 id="c"></canvas>
+    <div id="status">
+      <span id="msgtext">Not connected</span>
+    </div>
   </body>
-  <script>
-    const log = (msg) => {
-      const el = document.getElementById("log");
-      el.textContent += msg + "\n";
-    };
-  
-    let worker = null;
-    
-    document.getElementById("init").onclick = () => {
-      worker = new Worker("worker.js");
-      worker.onmessage = (e) => {
-        log("From worker: " + JSON.stringify(e.data));
-      };
-
-      // Point to your server base URL
-      worker.postMessage({ type: "init", baseUrl: "http://localhost:8080" });
-      log("Init message sent to worker.");
-    };
-
-    document.getElementById("send").onclick = () => {
-      if (worker) {
-        worker.postMessage({ type: "stdin", data: "uci\n" });
-        log("Sent 'uci' to worker.");
-      } else {
-        log("Worker not initialized yet.");
-      }
-    };
-  </script>
-  <script type="module" src="/main.js"></script> -->
+  <script type="module" src="/main.js"></script>
 </html>
 

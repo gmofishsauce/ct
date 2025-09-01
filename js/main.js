@@ -1,13 +1,29 @@
 import * as THREE from 'three';
 import {OrbitControls} from 'three/addons/controls/OrbitControls.js';
 
-function main() {
+const canvas = document.querySelector( '#c' );
+const renderer = new THREE.WebGLRenderer( { antialias: true, canvas } );
+const scene = new THREE.Scene();
+const height = 3; // XXX used in both actors() and rendering code
 
-    const canvas = document.querySelector( '#c' );
-    const renderer = new THREE.WebGLRenderer( { antialias: true, canvas } );
-    const scene = new THREE.Scene();
+function log(msg) {
+  console.log(msg);
+};
 
-    // Lights!
+document.getElementById("c").addEventListener('keydown', (e) => {
+    log("key: " + e.keyCode); // TODO 
+});
+
+// document.getElementById("send").onclick = () => {
+//   if (worker) {
+//     worker.postMessage({ type: "stdin", data: "uci\n" });
+//     log("Sent 'uci' to worker.");
+//   } else {
+//     log("Worker not initialized yet.");
+//   }
+// };
+
+function lights() {
     const lightColor = 0xFFFFFF;
     let lightIntensity = 2;
     const ambientLight = new THREE.AmbientLight(lightColor, lightIntensity);
@@ -17,21 +33,24 @@ function main() {
     const directionalLight = new THREE.DirectionalLight(lightColor, 3);
     directionalLight.position.set(-1, 2, 4);
     scene.add(directionalLight);
+}
 
-    // Camera!
+function camera() {
     const fov = 60;
     const aspect = 2; // the canvas default
     const near = 0.1;
     const far = 25;
     const camera = new THREE.PerspectiveCamera( fov, aspect, near, far );
-    camera.position.z = 15;
 
+    camera.position.z = 15;
     const controls = new OrbitControls(camera, canvas);
     controls.target.set(0, 2, 0);
     controls.update();
 
-    // Well, we need some actors before we can have action...
-    const height = 3;  
+    return camera;
+}
+
+function actors() {
     const radius = 1.0;
     const radialSegments = 6;  
     const cylGeometry = new THREE.CylinderGeometry(radius, radius, height, radialSegments);
@@ -108,6 +127,14 @@ function main() {
         makeGroup(0xaa6622, "c4",    sqrt3/2,  0, -3/2),
         makeGroup(0x886622, "b3",    -sqrt3/2, 0, -3/2),
     ];
+    return groups;
+}
+
+function main() {
+
+    lights();
+    const cam = camera();
+    const groups = actors();
 
     // OK, Action!
 
@@ -153,15 +180,25 @@ function main() {
 
       if (resizeRendererToDisplaySize(renderer)) {
         const canvas = renderer.domElement;
-        camera.aspect = canvas.clientWidth / canvas.clientHeight;
-        camera.updateProjectionMatrix();
+        cam.aspect = canvas.clientWidth / canvas.clientHeight;
+        cam.updateProjectionMatrix();
       }
 
-      renderer.render( scene, camera );
+      renderer.render( scene, cam );
       requestAnimationFrame( render );
     }
 
     requestAnimationFrame( render );
 }
+
+const worker = new Worker(new URL("worker.js", import.meta.url));
+log("worker: " + JSON.stringify(worker));
+worker.onmessage = (e) => {
+ log("From worker: " + JSON.stringify(e.data));
+};
+
+msgtext.innerText = "Connecting...";
+worker.postMessage({ type: "init", baseUrl: "http://localhost:8080" });
+log("Init message sent to worker.");
 
 main();

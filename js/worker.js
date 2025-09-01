@@ -38,7 +38,6 @@ onmessage = async (e) => {
 
         ws.onmessage = (event) => {
           try {
-            //postMessage({type: "debug", data: JSON.stringify(event.data)});
             const recv = JSON.parse(event.data);
             postMessage({type: recv.type, data: recv.data});
           } catch (err) {
