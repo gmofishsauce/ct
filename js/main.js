@@ -1,27 +1,24 @@
 import * as THREE from 'three';
 import {OrbitControls} from 'three/addons/controls/OrbitControls.js';
 
+const worker = new Worker(new URL("worker.js", import.meta.url));
+
 const canvas = document.querySelector( '#c' );
 const renderer = new THREE.WebGLRenderer( { antialias: true, canvas } );
 const scene = new THREE.Scene();
 const height = 3; // XXX used in both actors() and rendering code
 
-function log(msg) {
+function dbg(msg) {
   console.log(msg);
 };
 
-document.getElementById("c").addEventListener('keydown', (e) => {
-    log("key: " + e.keyCode); // TODO 
-});
+function status(msg) {
+    msgtext.innerText = msg;
+}
 
-// document.getElementById("send").onclick = () => {
-//   if (worker) {
-//     worker.postMessage({ type: "stdin", data: "uci\n" });
-//     log("Sent 'uci' to worker.");
-//   } else {
-//     log("Worker not initialized yet.");
-//   }
-// };
+document.getElementById("c").addEventListener('keydown', (e) => {
+    dbg("key: " + e.keyCode); // TODO 
+});
 
 function lights() {
     const lightColor = 0xFFFFFF;
@@ -191,14 +188,23 @@ function main() {
     requestAnimationFrame( render );
 }
 
-const worker = new Worker(new URL("worker.js", import.meta.url));
-log("worker: " + JSON.stringify(worker));
+// document.getElementById("send").onclick = () => {
+//   if (worker) {
+//     worker.postMessage({ type: "stdin", data: "uci\n" });
+//     dbg("Sent 'uci' to worker.");
+//   } else {
+//     dbg("Worker not initialized yet.");
+//   }
+// };
+
 worker.onmessage = (e) => {
- log("From worker: " + JSON.stringify(e.data));
+ dbg("From worker: " + JSON.stringify(e.data)); // TODO
 };
 
-msgtext.innerText = "Connecting...";
-worker.postMessage({ type: "init", baseUrl: "http://localhost:8080" });
-log("Init message sent to worker.");
+let connected = false;
+status("Connecting...");
+do {
+    worker.postMessage({ type: "open", baseUrl: "http://localhost:8080" });
+} while (!connected);
 
 main();

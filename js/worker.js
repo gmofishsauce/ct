@@ -15,45 +15,71 @@
 let ws = null;
 let baseUrl = "";
 
+function dbg(msg) {
+  postMessage({type: "debug", data: msg});
+}
+
+function delay(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+// Delay for a little while (cheesy backoff) and then post
+// an error back to the main thread.
+function error(msg) {
+  delay(2500);
+  postMessage({ type: "error", error: msg });
+}
+
+// Delay for a little while (cheesy backoff) and then throw
+// an error with the given message.
+function fail(msg) {
+  delay(2500);
+  throw new Error(msg);
+}
+
 onmessage = async (e) => {
   const msg = e.data;
   if (!msg || !msg.type) return;
 
   switch (msg.type) {
-    case "init":
-      postMessage({type: "debug", data: "worker init"});
+    case "open":
+      dbg("open");
       baseUrl = msg.baseUrl || "";
       try {
         // Check health
         const resp = await fetch(baseUrl + "/api/health");
-        if (!resp.ok) throw new Error("/api/health returned " + resp.status);
+        if (!resp.ok) {
+          fail("/api/health returned " + resp.status);
+        }
         const data = await resp.json();
-        if (!data.ok) throw new Error("/api/health response not ok");
-        postMessage({type: "debug", data: "health check OK"});
+        if (!data.ok) {
+          fail("/api/health response not ok");
+        }
+        dbg("health check OK");
 
         // Open websocket
         const wsUrl = baseUrl.replace(/^http/, "ws") + "/ws/run";
         ws = new WebSocket(wsUrl);
-        postMessage({type: "debug", data: "web socket created"});
+        dbg("web socket created");
 
         ws.onmessage = (event) => {
           try {
             const recv = JSON.parse(event.data);
             postMessage({type: recv.type, data: recv.data});
           } catch (err) {
-            postMessage({ type: "error", error: "invalid JSON from server" });
+            error("invalid JSON from server");
           }
         };
 
         ws.onerror = (err) => {
-          postMessage({ type: "error", error: "WebSocket error" });
+          error("WebSocket error");
         };
 
         ws.onclose = () => {
-          postMessage({ type: "error", error: "WebSocket closed" });
+          error("WebSocket closed");
         };
       } catch (err) {
-        postMessage({ type: "error", error: err.message });
+        error(err.message);
       }
       break;
 
