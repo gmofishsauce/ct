@@ -6,17 +6,16 @@ const renderer = new THREE.WebGLRenderer( { antialias: true, canvas } );
 const scene = new THREE.Scene();
 const height = 3; // XXX used in both actors() and rendering code
 
+let serverStatus = "down";
+
 function dbg(msg) {
     console.log(msg);
 };
 
 function setStatus(msg) {
-    msgtext.innerText = "server status: " + msg;
+    serverStatus = (msg == null) ? "down" : msg;
+    msgtext.innerText = "server status: " + serverStatus;
 }
-
-document.getElementById("c").addEventListener('keydown', (e) => {
-    dbg("key: " + e.keyCode); // TODO 
-});
 
 function lights() {
     const lightColor = 0xFFFFFF;
@@ -125,6 +124,8 @@ function actors() {
     return groups;
 }
 
+let sent = false;
+
 function main() {
 
     lights();
@@ -180,35 +181,57 @@ function main() {
       }
 
       renderer.render( scene, cam );
+      if (serverStatus == "ready" && !sent) { // XXX
+        worker.postMessage({ type: "stdin", data: "ucinewgame" });
+        sent = true;
+      }
       requestAnimationFrame( render );
     }
 
     requestAnimationFrame( render );
 }
 
+// And finally the non-animation part of the app
+
 const worker = new Worker(new URL("worker.js", import.meta.url));
 
-// XXX TODO time to start sending UCI and getting options!
-//
-// document.getElementById("send").onclick = () => {
-//   if (worker) {
-//     worker.postMessage({ type: "stdin", data: "uci\n" });
-//     dbg("Sent 'uci' to worker.");
-//   } else {
-//     dbg("Worker not initialized yet.");
-//   }
-// };
+document.getElementById("c").addEventListener('keydown', (e) => {
+    dbg("key: " + e.keyCode); // TODO 
+});
+
+function parseInfo(strArray) {
+    dbg("parseInfo()");
+}
+
+function parseOption(strArray) {
+    dbg("parseOption()");
+}
 
 worker.onmessage = (e) => {
- dbg("From worker: " + JSON.stringify(e.data));
- setStatus(e.data.status);
+    let json = e.data;
+    dbg("From worker: " + JSON.stringify(json));
+    if (json.type === "stdout") {
+        // yes, we want e.data.data.split()...
+        let received = json.data.split(" ");
+        if (received[0] === "info") {
+            parseInfo(json.data);
+        } else if (received[0] === "option") {
+            parseOption(json.data);
+        }
+    }
+    setStatus(json.status);
 };
 
-let connected = false;  // XXX TODO use status field, don't block thread.
-                        // XXX TODO will need a retry timer to post messages.
-do {
-    worker.postMessage({ type: "open", baseUrl: "http://localhost:8080" });
-    connected = true;
-} while (!connected);
+function connect() {
+    dbg("serverStatus: " + serverStatus + " sent: " + sent);
+    if (serverStatus === "down") {
+        dbg("connecting...");
+        worker.postMessage({ type: "open", baseUrl: "http://localhost:8080" });
+    }
+    // XXX it's possible to do this only if the server status
+    // XXX is not "ready" but it's not worth the trouble.
+    setTimeout(connect, 1500);
+}
 
+setTimeout(connect, 1500);
 main();

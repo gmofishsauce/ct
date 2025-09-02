@@ -29,10 +29,6 @@ function dbg(msg) {
   postMessage({type: "debug", data: msg});
 }
 
-function delay(ms) {
-  return new Promise(resolve => setTimeout(resolve, ms));
-}
-
 function statusString(ws) {
   // These strings are displayed directly to users  
   // The state called "closed" is better described as "down"
@@ -40,10 +36,8 @@ function statusString(ws) {
   return (ws) ? names[ws.readyState] : "down";
 }
 
-// Delay for a little while (cheesy backoff) and then post
-// an error back to the main thread.
+// Post an error back to the main thread.
 function error(msg) {
-  delay(2500);
   postMessage({ type: "error", error: msg, status: statusString(ws) });
 }
 
@@ -97,11 +91,13 @@ onmessage = async (e) => {
       break;
 
     case "stdin":
-      debug("stdin case entered");
       if (ws && ws.readyState === WebSocket.OPEN) {
-        ws.send(JSON.stringify({ type: "stdin", data: msg.data }));
+        let content = JSON.stringify({ type: "stdin", data: msg.data });
+        dbg("sending to server: " + content);
+        ws.send(content);
+        dbg("content sent");
       } else {
-        postMessage({ type: "error", error: "WebSocket not open", status: statusString(ws) });
+        postMessage({ type: "error", error: "not connected", status: statusString(ws) });
       }
       break;
 

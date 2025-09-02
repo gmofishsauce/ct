@@ -2,9 +2,9 @@ Pull app together:
 
 DONE App needs a text box with a button next to it and a status bar.
 Startup:
-    IN PROGRESS send fixed initialization to server.
-If not responding:
-    message in status bar, button says "start", text box gray.
+    DONE send fixed initialization to server.
+DONE If not responding:
+    DONE message in status bar, button says "start", text box gray.
 When server connection:
     pale "startpos" message in status bar, button says "Go!".
     click button -> startpos to server
@@ -14,3 +14,4 @@ Running (for now)
     enter/return centers on the selected hex
     there is no "blowout" to more hexes yet.
 
+Initially set MultiPV = 6
