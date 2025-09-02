@@ -1,19 +1,17 @@
 import * as THREE from 'three';
 import {OrbitControls} from 'three/addons/controls/OrbitControls.js';
 
-const worker = new Worker(new URL("worker.js", import.meta.url));
-
 const canvas = document.querySelector( '#c' );
 const renderer = new THREE.WebGLRenderer( { antialias: true, canvas } );
 const scene = new THREE.Scene();
 const height = 3; // XXX used in both actors() and rendering code
 
 function dbg(msg) {
-  console.log(msg);
+    console.log(msg);
 };
 
-function status(msg) {
-    msgtext.innerText = msg;
+function setStatus(msg) {
+    msgtext.innerText = "server status: " + msg;
 }
 
 document.getElementById("c").addEventListener('keydown', (e) => {
@@ -188,6 +186,10 @@ function main() {
     requestAnimationFrame( render );
 }
 
+const worker = new Worker(new URL("worker.js", import.meta.url));
+
+// XXX TODO time to start sending UCI and getting options!
+//
 // document.getElementById("send").onclick = () => {
 //   if (worker) {
 //     worker.postMessage({ type: "stdin", data: "uci\n" });
@@ -198,13 +200,15 @@ function main() {
 // };
 
 worker.onmessage = (e) => {
- dbg("From worker: " + JSON.stringify(e.data)); // TODO
+ dbg("From worker: " + JSON.stringify(e.data));
+ setStatus(e.data.status);
 };
 
-let connected = false;
-status("Connecting...");
+let connected = false;  // XXX TODO use status field, don't block thread.
+                        // XXX TODO will need a retry timer to post messages.
 do {
     worker.postMessage({ type: "open", baseUrl: "http://localhost:8080" });
+    connected = true;
 } while (!connected);
 
 main();

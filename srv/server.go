@@ -28,6 +28,14 @@
 //       '/ws':  { target: 'ws://localhost:8080', ws: true, changeOrigin: true },
 //     } }
 //   })
+//
+// Message types sent by this server:
+// type: "error", error: "message"
+// type: "started", pid: Number, cmd: "path" [Number is a pid]
+// type: "stdout", data: "line of text"
+// type: "stdout", data: "line of text"
+// type: "pong" ts: Number [Number is a timestamp]
+// type: "exit", exitCode: Number [an exit code]
 
 package main
 
@@ -217,7 +225,6 @@ func wsRunHandler(w http.ResponseWriter, r *http.Request, cfg serverConfig) {
         scanner := bufio.NewScanner(stdout)
         scanner.Buffer(make([]byte, 64*1024), 10*1024*1024)
         for scanner.Scan() {
-			log.Printf("From stockfish: %s\n", scanner.Text())
 			sendJSON(conn, map[string]any{"type":"stdout","data":scanner.Text()})
 		}
         if err := scanner.Err(); err != nil {
@@ -245,6 +252,7 @@ func wsRunHandler(w http.ResponseWriter, r *http.Request, cfg serverConfig) {
 			if mt == websocket.TextMessage {
 				log.Printf("server received: %s\n", string(data))
 			}
+			// TODO XXX tries json.Unmarshal() even if mt == BinaryMessage !?
             var msg map[string]any
             if json.Unmarshal(data, &msg) == nil {
                 switch msg["type"] {
@@ -272,15 +280,22 @@ func wsRunHandler(w http.ResponseWriter, r *http.Request, cfg serverConfig) {
     wg.Wait()
     _ = stdin.Close()
     err = cmd.Wait()
-    status := map[string]any{"type":"exit"}
-    if err != nil { status["error"] = err.Error() }
-    if cmd.ProcessState != nil { status["exitCode"] = cmd.ProcessState.ExitCode() }
-    sendJSON(conn, status)
+	var result map[string]any
+	if err != nil {
+		result = map[string]any{"type":"error", "error":"tool exit: "+err.Error()}
+	} else {
+		result = map[string]any{"type":"exit", "exitCode": 0}
+		if cmd.ProcessState != nil { result["exitCode"] = cmd.ProcessState.ExitCode() }
+	}
+	sendJSON(conn, result)
 }
 
 // --- Helpers ---
 
-func sendJSON(conn *websocket.Conn, v any) {
+// This sendJSON() function can only transmit maps, which becomes JSON
+// objects, because it simplifies the client code a little to assume the
+// received JSON always parses as an object.
+func sendJSON(conn *websocket.Conn, v map[string]any) {
 	log.Printf("sendJSON(%v)\n", v)
     // Best-effort send; ignore errors if the client is gone
     _ = conn.WriteJSON(v)

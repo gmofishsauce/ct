@@ -4,13 +4,23 @@
 //   worker.onmessage = (e) => {
 //       console.log("Message from worker:", e.data);
 //   };
-//   worker.postMessage({ type: "init", baseUrl: "http://localhost:8080" });
-//   worker.postMessage({ type: "stdin", data: "hello\\n" });
+//   worker.postMessage({ type: "open", baseUrl: "http://localhost:8080" });
+//   worker.postMessage({ type: "stdin", data: "sent to server" });
 //
-// Worker messages back:
-//   { type: "ready" }                 // after successful init
-//   { type: "stdout", data: "..." }   // when server sends stdout
-//   { type: "error", error: "..." }   // if something goes wrong
+// Message types posted by this worker:
+//   { type: "debug" data: "some debug message" }
+//   { type: "error", error: "some error discovered locally" }
+// And the types expected from the server that are passed through:
+//   { type: "error", error: "some error discovered by the server" }
+//   { type: "started", pid: Number, cmd: "commandPath" }
+//   { type: "stdout", data: "a line of UCI response" }
+//   { type: "stderr", data: "a line of something from stderr" }
+//   { type: "pong", ts: Number } // number is a timestamp
+//   { type: "exit", [optional] error: "message", [optional] exitCode: Number }
+//
+// In addition, all messages posted by this worker aside debug messages
+// should contain a "status" field: status: statusString(ws) which correctly
+// handles a possible null ws.
 
 let ws = null;
 let baseUrl = "";
@@ -23,18 +33,18 @@ function delay(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
+function statusString(ws) {
+  // These strings are displayed directly to users  
+  // The state called "closed" is better described as "down"
+  const names = ["connecting", "ready", "closing", "down"];
+  return (ws) ? names[ws.readyState] : "down";
+}
+
 // Delay for a little while (cheesy backoff) and then post
 // an error back to the main thread.
 function error(msg) {
   delay(2500);
-  postMessage({ type: "error", error: msg });
-}
-
-// Delay for a little while (cheesy backoff) and then throw
-// an error with the given message.
-function fail(msg) {
-  delay(2500);
-  throw new Error(msg);
+  postMessage({ type: "error", error: msg, status: statusString(ws) });
 }
 
 onmessage = async (e) => {
@@ -49,11 +59,13 @@ onmessage = async (e) => {
         // Check health
         const resp = await fetch(baseUrl + "/api/health");
         if (!resp.ok) {
-          fail("/api/health returned " + resp.status);
+          error("/api/health returned " + resp.status);
+          break;
         }
         const data = await resp.json();
         if (!data.ok) {
-          fail("/api/health response not ok");
+          error("/api/health response not ok");
+          break;
         }
         dbg("health check OK");
 
@@ -65,7 +77,7 @@ onmessage = async (e) => {
         ws.onmessage = (event) => {
           try {
             const recv = JSON.parse(event.data);
-            postMessage({type: recv.type, data: recv.data});
+            postMessage({type: recv.type, data: recv.data, status: statusString(ws)});
           } catch (err) {
             error("invalid JSON from server");
           }
@@ -79,21 +91,22 @@ onmessage = async (e) => {
           error("WebSocket closed");
         };
       } catch (err) {
+        dbg("open: catch ...");
         error(err.message);
       }
       break;
 
     case "stdin":
-      postMessage({type: "debug", data: "stdin case entered"});
+      debug("stdin case entered");
       if (ws && ws.readyState === WebSocket.OPEN) {
         ws.send(JSON.stringify({ type: "stdin", data: msg.data }));
       } else {
-        postMessage({ type: "error", error: "WebSocket not open" });
+        postMessage({ type: "error", error: "WebSocket not open", status: statusString(ws) });
       }
       break;
 
     default:
-      postMessage({ type: "error", error: "Unknown message type" });
+      postMessage({ type: "error", error: "Unknown message type", status: statusString(ws) });
       break;
   }
 };
