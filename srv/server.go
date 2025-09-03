@@ -153,7 +153,7 @@ func loadConfig() (serverConfig, error) {
     flag.StringVar(&allowed, "allowed-origin", allowed, "allowed Origin for CORS/WS (dev: http://localhost:5173)")
     flag.StringVar(&serveStatic, "serve-static", serveStatic, "static mode: '', 'fs', or 'embed'")
     flag.StringVar(&staticDir, "static-dir", staticDir, "directory for static files when serve-static=fs")
-    flag.StringVar(&cmdPath, "cmd", cmdPath, "REQUIRED: path to CLI to execute")
+    flag.StringVar(&cmdPath, "cmd", cmdPath, "optional path to CLI command to execute")
     flag.StringVar(&fixedArgStr, "cmd-args", fixedArgStr, "optional comma-separated fixed args passed before options")
     flag.Parse()
 
@@ -190,6 +190,7 @@ func envOr(key, def string) string {
 
 // wsRunHandler upgrades to WS, starts the preconfigured CLI, streams stdout/stderr, accepts stdin, and reports exit.
 func wsRunHandler(w http.ResponseWriter, r *http.Request, cfg serverConfig) {
+	log.Printf("wsRunHandler() entered\n");
     // Tighten origin per request
     if cfg.AllowedOrigin != "" {
         upgrader.CheckOrigin = func(r *http.Request) bool { return r.Header.Get("Origin") == cfg.AllowedOrigin }
@@ -247,19 +248,22 @@ func wsRunHandler(w http.ResponseWriter, r *http.Request, cfg serverConfig) {
     go func() {
         for {
             mt, data, err := conn.ReadMessage()
+			log.Printf("received: %v err %v\n", data, err);
             if err != nil { cancel(); return }
-            if mt != websocket.TextMessage && mt != websocket.BinaryMessage { continue }
-			if mt == websocket.TextMessage {
-				log.Printf("server received: %s\n", string(data))
-			}
-			// TODO XXX tries json.Unmarshal() even if mt == BinaryMessage !?
+            if mt != websocket.TextMessage { cancel(); return }
+			log.Printf("server received: %s\n", string(data))
+
             var msg map[string]any
             if json.Unmarshal(data, &msg) == nil {
                 switch msg["type"] {
                 case "stdin":
-                    if s, _ := msg["data"].(string); s != "" { _, _ = stdin.Write([]byte(s)) }
+                    if s, _ := msg["data"].(string); s != "" {
+						n, e := stdin.Write([]byte(s))
+					}
                 case "signal":
-                    if s, _ := msg["data"].(string); s == "SIGINT" { _ = cmd.Process.Signal(os.Interrupt) }
+                    if s, _ := msg["data"].(string); s == "SIGINT" {
+						_ = cmd.Process.Signal(os.Interrupt)
+					}
                 case "ping":
                     sendJSON(conn, map[string]any{"type":"pong","ts":time.Now().UnixNano()})
                 }

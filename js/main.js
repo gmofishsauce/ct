@@ -13,7 +13,8 @@ function dbg(msg) {
 };
 
 function setStatus(msg) {
-    serverStatus = (msg == null) ? "down" : msg;
+    if (msg === null || msg === undefined) return;
+    serverStatus = msg;
     msgtext.innerText = "server status: " + serverStatus;
 }
 
@@ -181,10 +182,6 @@ function main() {
       }
 
       renderer.render( scene, cam );
-      if (serverStatus == "ready" && !sent) { // XXX
-        worker.postMessage({ type: "stdin", data: "ucinewgame" });
-        sent = true;
-      }
       requestAnimationFrame( render );
     }
 
@@ -194,6 +191,43 @@ function main() {
 // And finally the non-animation part of the app
 
 const worker = new Worker(new URL("worker.js", import.meta.url));
+
+// Thanks for this Google
+class StringMessageQueue {
+    constructor() {
+        this.queue = [];
+    }
+
+    enqueue(message) {
+        if (typeof message !== 'string') {
+            console.warn("Only string messages are supported.");
+            return;
+        }
+        this.queue.push(message);
+    }
+
+    dequeue() {
+        if (this.isEmpty()) {
+            return undefined;
+        }
+        return this.queue.shift();
+    }
+
+    peek() {
+        if (this.isEmpty()) {
+            return undefined;
+        }
+        return this.queue[0];
+    }
+
+    isEmpty() {
+        return this.queue.length === 0;
+    }
+
+    size() {
+        return this.queue.length;
+    }
+}
 
 document.getElementById("c").addEventListener('keydown', (e) => {
     dbg("key: " + e.keyCode); // TODO 
@@ -222,15 +256,23 @@ worker.onmessage = (e) => {
     setStatus(json.status);
 };
 
+const outbound = new StringMessageQueue();
+
+function doNet() {
+    dbg("doNet() enter serverStatus " + serverStatus + " outbound.isEmpty() " + outbound.isEmpty());
+    if (serverStatus == "ready" && !outbound.isEmpty()) {
+        worker.postMessage({ type: "stdin", data: outbound.dequeue() });
+    }
+    setTimeout(doNet, 1100);
+}
+
 function connect() {
-    dbg("serverStatus: " + serverStatus + " sent: " + sent);
     if (serverStatus === "down") {
         dbg("connecting...");
         worker.postMessage({ type: "open", baseUrl: "http://localhost:8080" });
     }
-    // XXX it's possible to do this only if the server status
-    // XXX is not "ready" but it's not worth the trouble.
-    setTimeout(connect, 1500);
+    outbound.enqueue("uci\n");
+    setTimeout(doNet, 1100);
 }
 
 setTimeout(connect, 1500);
