@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import * as utils from './utils.js'
 import {OrbitControls} from 'three/addons/controls/OrbitControls.js';
 
 const canvas = document.querySelector( '#c' );
@@ -192,43 +193,6 @@ function main() {
 
 const worker = new Worker(new URL("worker.js", import.meta.url));
 
-// Thanks for this Google
-class StringMessageQueue {
-    constructor() {
-        this.queue = [];
-    }
-
-    enqueue(message) {
-        if (typeof message !== 'string') {
-            console.warn("Only string messages are supported.");
-            return;
-        }
-        this.queue.push(message);
-    }
-
-    dequeue() {
-        if (this.isEmpty()) {
-            return undefined;
-        }
-        return this.queue.shift();
-    }
-
-    peek() {
-        if (this.isEmpty()) {
-            return undefined;
-        }
-        return this.queue[0];
-    }
-
-    isEmpty() {
-        return this.queue.length === 0;
-    }
-
-    size() {
-        return this.queue.length;
-    }
-}
-
 document.getElementById("c").addEventListener('keydown', (e) => {
     dbg("key: " + e.keyCode); // TODO 
 });
@@ -256,7 +220,7 @@ worker.onmessage = (e) => {
     setStatus(json.status);
 };
 
-const outbound = new StringMessageQueue();
+const outbound = new utils.StringMessageQueue();
 
 function doNet() {
     dbg("doNet() enter serverStatus " + serverStatus + " outbound.isEmpty() " + outbound.isEmpty());

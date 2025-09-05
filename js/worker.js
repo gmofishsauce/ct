@@ -25,8 +25,14 @@
 let ws = null;
 let baseUrl = "";
 
+// Post a debug message back to the main thread
 function dbg(msg) {
   postMessage({type: "debug", data: msg});
+}
+
+// Post an error back to the main thread.
+function error(msg) {
+  postMessage({ type: "error", error: msg, status: statusString(ws) });
 }
 
 function statusString(ws) {
@@ -34,11 +40,6 @@ function statusString(ws) {
   // The state called "closed" is better described as "down"
   const names = ["connecting", "ready", "closing", "down"];
   return (ws) ? names[ws.readyState] : "down";
-}
-
-// Post an error back to the main thread.
-function error(msg) {
-  postMessage({ type: "error", error: msg, status: statusString(ws) });
 }
 
 onmessage = async (e) => {
