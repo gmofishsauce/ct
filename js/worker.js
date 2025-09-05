@@ -42,9 +42,9 @@ function statusString(ws) {
   return (ws) ? names[ws.readyState] : "down";
 }
 
+// Handle a message posted to this worker's pump.
 onmessage = async (e) => {
   const msg = e.data;
-  if (!msg || !msg.type) return;
 
   switch (msg.type) {
     case "open":

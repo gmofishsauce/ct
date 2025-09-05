@@ -33,7 +33,7 @@
 // type: "error", error: "message"
 // type: "started", pid: Number, cmd: "path" [Number is a pid]
 // type: "stdout", data: "line of text"
-// type: "stdout", data: "line of text"
+// type: "stderr", data: "line of text" [not used by Stockfish?]
 // type: "pong" ts: Number [Number is a timestamp]
 // type: "exit", exitCode: Number [an exit code]
 
@@ -258,7 +258,11 @@ func wsRunHandler(w http.ResponseWriter, r *http.Request, cfg serverConfig) {
                 switch msg["type"] {
                 case "stdin":
                     if s, _ := msg["data"].(string); s != "" {
-						n, e := stdin.Write([]byte(s))
+						if _, e := stdin.Write([]byte(s)); e != nil {
+							sendJSON(conn, map[string]any{
+								"type":"error","error":fmt.Sprintf("writing to Stock: %v", e),
+							})
+						}
 					}
                 case "signal":
                     if s, _ := msg["data"].(string); s == "SIGINT" {

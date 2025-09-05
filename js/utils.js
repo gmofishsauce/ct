@@ -1,5 +1,5 @@
 
-export class StringMessageQueue {
+export class MessageQueue {
     constructor() {
         this.queue = [];
     }

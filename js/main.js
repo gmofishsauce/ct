@@ -197,47 +197,107 @@ document.getElementById("c").addEventListener('keydown', (e) => {
     dbg("key: " + e.keyCode); // TODO 
 });
 
-function parseInfo(strArray) {
-    dbg("parseInfo()");
+function parseResponse(fromServer) {
+    dbg("parseResponse()");
+    /* XXX TODO 
+        let received = fromServer.split(" ");
+    *   ...
+    */
 }
 
-function parseOption(strArray) {
-    dbg("parseOption()");
-}
+// The commState is mostly to handle initialization (connection).
+// We don't display it to users - we only display the simpler serverState.
+// The DEAD state is not recoverable; you have to refresh the page if the
+// server dies. Making it recoverable would require this front end to
+// maintain and save the game state, so it's much more work.
+
+const STATE_START = "uninitialized";
+const STATE_OPENING = "opening";
+const STATE_CONNECTED = "connected";
+const STATE_DEAD = "dead";
+
+let commState = STATE_START;
+
+// Network input side. Only communicates with the output side by enqueuing
+// data to be sent and changing state variables. The argument is typed
+// object from the web worker, not a network message. N.B. timeouts are all
+// sort of "weird" numbers to make it less likely we'll fall into lockstep
+// with other system activities.
+
+const outbound = new utils.MessageQueue();
 
 worker.onmessage = (e) => {
-    let json = e.data;
-    dbg("From worker: " + JSON.stringify(json));
-    if (json.type === "stdout") {
-        // yes, we want e.data.data.split()...
-        let received = json.data.split(" ");
-        if (received[0] === "info") {
-            parseInfo(json.data);
-        } else if (received[0] === "option") {
-            parseOption(json.data);
+    const msg = e.data;
+
+    switch (msg.type) {
+    case "started":
+        if (commState == STATE_OPENING) {
+            commState = STATE_CONNECTED;
+            outbound.enqueue("uci\n");
+        } else {
+            dbg("unexpected STARTED message from server ignored");
         }
+        break;
+    case "error":
+        dbg(`error from server: ${msg.error}`);
+        if (commState == STATE_OPENING) {
+            // do nothing; the transmit side will try again soon.
+        } else if (commState == STATE_CONNECTED) {
+            commState = STATE_DEAD;
+        }
+        break;
+    case "stdout":
+        parseResponse(msg.data);
+        break;
+    case "stderr":
+        dbg(`stderr from Stockfish: ${msg.data}`);
+        break;
+    case "debug":
+        dbg(`debug: ${msg.data}`);
+        break;
+    default: // pong, exit, truly unknown
+        dbg(`onmessage(${msg.type}: ${msg.data} (${msg.status})) ignored`);
+        break;
     }
-    setStatus(json.status);
+
+    setStatus(msg.status);
 };
 
-const outbound = new utils.StringMessageQueue();
-
 function doNet() {
-    dbg("doNet() enter serverStatus " + serverStatus + " outbound.isEmpty() " + outbound.isEmpty());
-    if (serverStatus == "ready" && !outbound.isEmpty()) {
-        worker.postMessage({ type: "stdin", data: outbound.dequeue() });
+    let delay = 537;
+    switch (commState) {
+        case STATE_START:
+            // Ask the worker to open the connection and give it a couple of seconds.
+            worker.postMessage({ type: "open", baseUrl: "http://localhost:8080" });
+            commState = STATE_OPENING;
+            delay = 1917;
+            break;
+        case STATE_OPENING:
+            // It's been a couple of seconds and the connection has not opened.
+            // Come back here pretty soon and try again. There's a race here where
+            // if the connection completes during the short time window we're back
+            // in the START state, the worker will create a second connection. I
+            // should fix this.
+            commState = STATE_START;
+            delay = 3;
+            break;
+        case STATE_CONNECTED:
+            // Normal state. If there's a message to Stockfish, send it.
+            if (!outbound.isEmpty()) {
+                worker.postMessage({ type: "stdin", data: outbound.dequeue() });
+            }
+            break;
+        case STATE_DEAD:
+            // There's no way out of the DEAD state except a page refresh.
+            delay = 30*1000*1000;
+            break;
+        default:
+            dbg(`unknown commState ${commState}`);
+            break;
     }
-    setTimeout(doNet, 1100);
+
+    setTimeout(doNet, delay);
 }
 
-function connect() {
-    if (serverStatus === "down") {
-        dbg("connecting...");
-        worker.postMessage({ type: "open", baseUrl: "http://localhost:8080" });
-    }
-    outbound.enqueue("uci\n");
-    setTimeout(doNet, 1100);
-}
-
-setTimeout(connect, 1500);
+setTimeout(doNet, 1453);
 main();
