@@ -189,21 +189,13 @@ function main() {
     requestAnimationFrame( render );
 }
 
-// And finally the non-animation part of the app
-
-const worker = new Worker(new URL("worker.js", import.meta.url));
-
 document.getElementById("c").addEventListener('keydown', (e) => {
     dbg("key: " + e.keyCode); // TODO 
 });
 
-function parseResponse(fromServer) {
-    dbg("parseResponse()");
-    /* XXX TODO 
-        let received = fromServer.split(" ");
-    *   ...
-    */
-}
+// The web worker handles the link to the server that fronts Stockfish.
+
+const worker = new Worker(new URL("worker.js", import.meta.url));
 
 // The commState is mostly to handle initialization (connection).
 // We don't display it to users - we only display the simpler serverState.
@@ -225,6 +217,51 @@ let commState = STATE_START;
 // with other system activities.
 
 const outbound = new utils.MessageQueue();
+
+// Parse UCI responses from Stockfish
+// https://official-stockfish.github.io/docs/stockfish-wiki/UCI-&-Commands.html
+// https://backscattering.de/chess/uci/
+function parseResponse(fromServer) {
+    dbg(`parseResponse(${fromServer})`);
+    const words = fromServer.split(" ");
+    switch (words[0]) {
+    case "uciok":
+        // Sent at the end of id and options in response to "uci". Init is complete.
+        outbound.enqueue("setoption name MultiPV value 6\n");
+        outbound.enqueue("setoption name UCI_ShowWDL value true\n");
+        outbound.enqueue("ucinewgame\n");
+        outbound.enqueue("isready\n");
+        break;
+    case "id":
+        // next word "name" or "author"; we care about "name Stockfish"
+        if (words[1] == "name") {
+            if (words[2] != "Stockfish") {
+                alert(`This program is designed to work with Stockfish.\n` +
+                      `Execution continues, but ${words[2]} might not work correctly.`);
+            }
+        }
+        break;
+    case "option":
+        // We care about option name MultiPV type spin default 1 min 1 max 256 type:stdout])
+        // And option name UCI_ShowWDL type check default false type:stdout])
+        // For now that's it; in the future, Threads, Ponder, and possibly others.
+        break;
+    case "readyok":
+        // The engine is ready to receive commands.
+        // For a quick hack, we assume this will be sent only after "ucinewgame"
+        outbound.enqueue("position startpos\n");
+        outbound.enqueue("go infinite\n");
+        break;
+    case "info":
+        // The engine sends info periodically and we update the GUI .
+        break;
+    default:
+        dbg("response ignored");
+        break;
+    }
+}
+
+// Handle messages from worker thread - connect and then give "stdout" to parser.
 
 worker.onmessage = (e) => {
     const msg = e.data;
