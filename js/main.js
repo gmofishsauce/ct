@@ -5,7 +5,7 @@ import {OrbitControls} from 'three/addons/controls/OrbitControls.js';
 const canvas = document.querySelector( '#c' );
 const renderer = new THREE.WebGLRenderer( { antialias: true, canvas } );
 const scene = new THREE.Scene();
-const height = 3; // XXX used in both actors() and rendering code
+const baseHeight = 3;
 
 let serverStatus = "down";
 
@@ -46,93 +46,91 @@ function camera() {
     return camera;
 }
 
-function actors() {
-    const radius = 1.0;
-    const radialSegments = 6;  
-    const cylGeometry = new THREE.CylinderGeometry(radius, radius, height, radialSegments);
 
-    function makeCylInstance( geometry, color, x, y, z ) {
-		const material = new THREE.MeshPhongMaterial( { color } );
-		const hexCyl = new THREE.Mesh( geometry, material );
-		hexCyl.position.x = x;
-		hexCyl.position.y = y;
-		hexCyl.position.z = z;
-		return hexCyl;
-	}
+const cylGeometry = new THREE.CylinderGeometry(1, 1, baseHeight, 6); // hexagon cross-section
+const labelGeometry = new THREE.CircleGeometry(1, 64); // round disk for label
 
-    // Circle geometry matching the cylinder top (radius=1, 6 segments for hex alignment not needed)
-    const labelGeometry = new THREE.CircleGeometry(1, 64); 
+function makeDynamicLabelTexture(text) {
+  const size = 256;
+  const canvas = document.createElement('canvas');
+  canvas.width = size;
+  canvas.height = size;
+  const ctx = canvas.getContext('2d');
 
-    function makeLabelInstance(geometry, text, xPos, yPos, zPos) {
-        const size = 256; // keep it power of two
-        const offscreenCanvas = document.createElement('canvas');
-        offscreenCanvas.width = size;
-        offscreenCanvas.height = size;
-        const ctx = offscreenCanvas.getContext('2d');
+  function update(newText) {
+    ctx.clearRect(0, 0, size, size);
+    ctx.fillStyle = '#FFFFFF';
+    ctx.font = '48px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(newText, size / 2, size / 2);
+    texture.needsUpdate = true;
+  }
 
-        // Background transparent
-        ctx.clearRect(0, 0, size, size);
+  const texture = new THREE.CanvasTexture(canvas);
+  update(text);
 
-        // Text styling
-        ctx.fillStyle = '#FFFFFF';
-        ctx.font = '48px sans-serif';
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'bottom';
-        ctx.fillText(text, size / 2, size / 2);
-
-        const texture = new THREE.CanvasTexture(offscreenCanvas);
-        texture.needsUpdate = true;
-
-        const labelMaterial = new THREE.MeshBasicMaterial({
-            map: texture,
-            color: 0xFFFFFF,
-            transparent: true, // keep background transparent
-            side: THREE.DoubleSide
-        });
-
-        const labelMesh = new THREE.Mesh(labelGeometry, labelMaterial);
-
-        labelMesh.rotation.x = 0; // vertical; use -Math.PI / 2 to make flat
-        labelMesh.position.x = xPos;
-        labelMesh.position.y = yPos;
-        labelMesh.position.z = zPos;
-        return labelMesh;
-    }
-
-    const sqrt3 = Math.sqrt(3.0);
-    const CYL = 0;
-    const LAB = 1;
-
-    function makeGroup(color, text, x, y, z) {
-        const cyl = makeCylInstance(cylGeometry, color, 0, 0, 0);
-        const lab = makeLabelInstance(labelGeometry, text, 0, height/2+0.1, 0);
-        const group = new THREE.Group();
-        group.add(cyl);
-        group.add(lab);
-        scene.add(group);
-        group.position.set(x, y, z);
-        return group;
-    }
-
-    const groups = [
-        makeGroup(0x44aa88, "start", 0,        0, 0),
-        makeGroup(0x8844aa, "e4",    sqrt3,    0, 0),
-        makeGroup(0xaa8844, "d4",    -sqrt3,   0, 0),
-        makeGroup(0x2266aa, "Nc3",   sqrt3/2,  0, 3/2),
-        makeGroup(0x6622aa, "Nf3",   -sqrt3/2, 0, 3/2),
-        makeGroup(0xaa6622, "c4",    sqrt3/2,  0, -3/2),
-        makeGroup(0x886622, "b3",    -sqrt3/2, 0, -3/2),
-    ];
-    return groups;
+  return { texture, update };
 }
 
-let sent = false;
+// --- Factory function ---
+function makeCylWithLabel(color, text, x, y, z) {
+  const group = new THREE.Group();
+  group.position.set(x, y, z);
+
+  // Cylinder (unique material per cylinder)
+  const cylMaterial = new THREE.MeshPhongMaterial({ color });
+  const cylMesh = new THREE.Mesh(cylGeometry, cylMaterial);
+  group.add(cylMesh);
+
+  // Label (unique material + texture per label)
+  const dynamicLabel = makeDynamicLabelTexture(text);
+  const labelMaterial = new THREE.MeshBasicMaterial({
+    map: dynamicLabel.texture,
+    transparent: true,
+    side: THREE.DoubleSide
+  });
+  const labelMesh = new THREE.Mesh(labelGeometry, labelMaterial);
+  labelMesh.rotation.x = 0;
+  labelMesh.position.y = baseHeight/2 + 0.2;
+  group.add(labelMesh);
+
+  // --- API: update height ---
+  function updateHeight(scaleY) {
+    cylMesh.scale.y = scaleY;
+    cylMesh.position.y = baseHeight*(scaleY/2) - baseHeight/2;
+    labelMesh.position.y = baseHeight*scaleY - baseHeight/2 + 0.2;
+  }
+
+  // Return group plus handles for updates
+  return {
+    group,           // add to scene
+    cylMesh,         // access mesh
+    cylMaterial,     // change color
+    labelMesh,       // access label mesh
+    labelUpdater: dynamicLabel.update, // change text
+    updateHeight,    // change height
+  };
+}
+
+const sqrt3 = Math.sqrt(3.0);
+
+const items = [
+    makeCylWithLabel(0x44aa88, "start", 0,        0, 0),
+    makeCylWithLabel(0x8844aa, "e4",    sqrt3,    0, 0),
+    makeCylWithLabel(0xaa8844, "d4",    -sqrt3,   0, 0),
+    makeCylWithLabel(0x2266aa, "Nc3",   sqrt3/2,  0, 3/2),
+    makeCylWithLabel(0x6622aa, "Nf3",   -sqrt3/2, 0, 3/2),
+    makeCylWithLabel(0xaa6622, "c4",    sqrt3/2,  0, -3/2),
+    makeCylWithLabel(0x886622, "b3",    -sqrt3/2, 0, -3/2),
+];
+
 
 function main() {
 
     lights();
     const cam = camera();
-    const groups = actors();
+    items.forEach(item => scene.add(item.group));
 
     // OK, Action!
 
@@ -156,13 +154,14 @@ function main() {
       // Every so often change the target height of all the bars
       if (time - previousUpdate > 1500) {
         previousUpdate = time;
-        groups.forEach((unused, ndx) => {
+        items.forEach((item, ndx) => {
           targetScale[ndx] = 1.5 - Math.random(); // range 0.5..1.5
+          item.labelUpdater(new String(time));
         });
       }
 
       // Every frame converges the bars on the targets by small steps
-      groups.forEach((group, ndx) => {
+      items.forEach((item, ndx) => {
         let diff = targetScale[ndx] - actualScale[ndx]
         if (Math.abs(diff) > 0.011) {
             if (diff > 0) {
@@ -170,9 +169,7 @@ function main() {
             } else {
               actualScale[ndx] -= 0.01;
             }
-            group.children[0].scale.y = actualScale[ndx];
-            group.children[0].position.y = height * (actualScale[ndx]/2) - height/2;
-            group.children[1].position.y = height * (actualScale[ndx])   - height/2 + 0.01;
+            item.updateHeight(actualScale[ndx]);
         }
       });
 
