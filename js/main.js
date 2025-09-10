@@ -74,9 +74,10 @@ function makeDynamicLabelTexture(text) {
 }
 
 // --- Factory function ---
-function makeCylWithLabel(color, text, x, y, z) {
+function makeCylWithLabel(color, text, vec) {
+  dbg(`makeCylWithLabel(${color}, ${text}, ${vec[0]}, ${vec[1]}, ${vec[2]}`);
   const group = new THREE.Group();
-  group.position.set(x, y, z);
+  group.position.set(vec[0], vec[1], vec[2]);
 
   // Cylinder (unique material per cylinder)
   const cylMaterial = new THREE.MeshPhongMaterial({ color });
@@ -113,18 +114,44 @@ function makeCylWithLabel(color, text, x, y, z) {
   };
 }
 
-const sqrt3 = Math.sqrt(3.0);
+// See https://www.redblobgames.com/grids/hexagons/
+// These are axial coordinates [q, r] with s derived.
+// The order of the offsets is designed along with the 
+// Stockfish responses to place taller "terrain" at the
+// back right and lower terrain at the front left. We put
+// 0, 0, 0 in the offsets as offset [0] because Stockfish
+// traces start with 1.
 
-const items = [
-    makeCylWithLabel(0x44aa88, "start", 0,        0, 0),
-    makeCylWithLabel(0x8844aa, "e4",    sqrt3,    0, 0),
-    makeCylWithLabel(0xaa8844, "d4",    -sqrt3,   0, 0),
-    makeCylWithLabel(0x2266aa, "Nc3",   sqrt3/2,  0, 3/2),
-    makeCylWithLabel(0x6622aa, "Nf3",   -sqrt3/2, 0, 3/2),
-    makeCylWithLabel(0xaa6622, "c4",    sqrt3/2,  0, -3/2),
-    makeCylWithLabel(0x886622, "b3",    -sqrt3/2, 0, -3/2),
+const offsets = [
+    [ 0,  0], // 0, not a direction: s is 0
+    [ 1, -1], // 1: s is 0
+    [ 0, -1], // 2: s is 1
+    [ 1,  0], // 3: s is -1
+    [ 0,  1], // 4: s is -1
+    [-1,  0], // 5: s is 1
+    [-1,  1], // 6: s is 0
 ];
 
+const sqrt3 = Math.sqrt(3);
+const s3ov2 = sqrt3/2;
+const t3ov2 = 3./2;
+
+function xyzPos(stockfishIndex, distance) {
+    const hex = offsets[stockfishIndex];
+    const x   = sqrt3*hex[0]  +  s3ov2*hex[1];
+    const z   =                  t3ov2*hex[1];
+    return [x*distance, 0, z*distance];
+}
+
+const items = [
+    makeCylWithLabel(0x44aa88, "start", xyzPos(0, 0)),
+    makeCylWithLabel(0x8844aa, "e4",    xyzPos(1, 1)),
+    makeCylWithLabel(0xaa8844, "d4",    xyzPos(2, 1)),
+    makeCylWithLabel(0x2266aa, "Nc3",   xyzPos(3, 1)),
+    makeCylWithLabel(0x6622aa, "Nf3",   xyzPos(4, 1)),
+    makeCylWithLabel(0xaa6622, "c4",    xyzPos(5, 1)),
+    makeCylWithLabel(0x886622, "b3",    xyzPos(6, 1)),
+];
 
 function main() {
 
