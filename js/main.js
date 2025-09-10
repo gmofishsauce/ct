@@ -144,13 +144,13 @@ function xyzPos(stockfishIndex, distance) {
 }
 
 const items = [
-    makeCylWithLabel(0x44aa88, "start", xyzPos(0, 0)),
-    makeCylWithLabel(0x8844aa, "e4",    xyzPos(1, 1)),
-    makeCylWithLabel(0xaa8844, "d4",    xyzPos(2, 1)),
-    makeCylWithLabel(0x2266aa, "Nc3",   xyzPos(3, 1)),
-    makeCylWithLabel(0x6622aa, "Nf3",   xyzPos(4, 1)),
-    makeCylWithLabel(0xaa6622, "c4",    xyzPos(5, 1)),
-    makeCylWithLabel(0x886622, "b3",    xyzPos(6, 1)),
+    makeCylWithLabel(0x44aa88, "0", xyzPos(0, 0)),
+    makeCylWithLabel(0x8844aa, "1", xyzPos(1, 1)),
+    makeCylWithLabel(0xaa8844, "2", xyzPos(2, 1)),
+    makeCylWithLabel(0x2266aa, "3", xyzPos(3, 1)),
+    makeCylWithLabel(0x6622aa, "4", xyzPos(4, 1)),
+    makeCylWithLabel(0xaa6622, "5", xyzPos(5, 1)),
+    makeCylWithLabel(0x886622, "6", xyzPos(6, 1)),
 ];
 
 function main() {
@@ -183,7 +183,7 @@ function main() {
         previousUpdate = time;
         items.forEach((item, ndx) => {
           targetScale[ndx] = 1.5 - Math.random(); // range 0.5..1.5
-          item.labelUpdater(new String(time));
+          // item.labelUpdater(new String(time)); REMOVE
         });
       }
 
@@ -277,8 +277,27 @@ function parseResponse(fromServer) {
         outbound.enqueue("go infinite\n");
         break;
     case "info":
-        // The engine sends info periodically and we update the GUI .
+    {
+        let index = 0;
+        let value = 0.0;
+        let name = "?";
+        for (let i = 0; i < words.length; i++) {
+            let word = words[i];
+            if (word == "multipv") {
+                index = +words[i+1];
+            } else if (word == "cp") {
+                value = +words[i+1] / 100.0;
+            } else if (word == "pv") {
+                name = words[i+1];
+            }
+        }
+        if (index > 0 && index < items.length) {
+            dbg(`set label ${index} to ${name}`);
+            items[index].labelUpdater(name);
+            // TODO set the height and color
+        }
         break;
+    }
     default:
         dbg("response ignored");
         break;
