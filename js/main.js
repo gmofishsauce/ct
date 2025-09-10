@@ -29,6 +29,8 @@ function lights() {
     const directionalLight = new THREE.DirectionalLight(lightColor, 3);
     directionalLight.position.set(-1, 2, 4);
     scene.add(directionalLight);
+
+    scene.background = new THREE.Color(0x505050);
 }
 
 function camera() {
@@ -59,7 +61,7 @@ function makeDynamicLabelTexture(text) {
 
   function update(newText) {
     ctx.clearRect(0, 0, size, size);
-    ctx.fillStyle = '#FFFFFF';
+    ctx.fillStyle = '#000000';
     ctx.font = '48px sans-serif';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
@@ -71,6 +73,53 @@ function makeDynamicLabelTexture(text) {
   update(text);
 
   return { texture, update };
+}
+
+// The argument is evaluation result, in pawns: 1.0 means "good for
+// this player, they're leading by a pawn", and -1.0 means bad, etc.
+// Pawn values can be up to 100 or so when mate is imminent, so we
+// have to bound the argument. Returns array [r, g, b] for now.
+function makeColor(pawns) {
+    if (pawns > 5.0) pawns = 5.0;
+    if (pawns < -5.0) pawns = -5.0;
+    const ex = Math.exp(pawns);
+    const sigmoid = 1.0 / (1.0+ex);
+
+    // Sigmoid is now a value between 0 and 1. We want values > 0.5
+    // tending toward green, < 0.5 tending toward red. We map 0.5 to
+    // an 80, 80, 80 gray. Below 0.5, we increase red toward C0 in
+    // 16 steps of 4 while decreasing green and blue by steps of 6
+    // and 8, respectively. Above 0.5, we do the opposite. The end
+    // values are C0, 20, 0 for values < 0.5 and 20, C0, 00 > 0.5.
+    const stepsize = 0.5 / 16;
+    let step = Math.abs(Math.round((sigmoid-0.5) / stepsize));
+    if (step < 0) step = 0;
+    if (step > 15) step = 15;
+
+    if (pawns >= 0) {
+        const red = 0x80 - 6*step;
+        const green = 0x80 + 4*step;
+        const blue = 0x80 - 8*step;
+        return [red, green, blue];
+    } else {
+        const red = 0x80 + 4*step;
+        const green = 0x80 - 6*step;
+        const blue = 0x80 - 8*step;
+        return [red, green, blue];
+    }
+}
+
+const toHex = (c) => {
+    const hex = Math.round(c).toString(16);
+    return hex.length === 1 ? "0" + hex : hex;
+};
+
+function rgbToHex(a) {
+    return `#${toHex(a[0])}${toHex(a[1])}${toHex(a[2])}`;
+}
+
+function makeHexColor(pawns) {
+    return rgbToHex(makeColor(pawns));
 }
 
 // --- Factory function ---
@@ -144,14 +193,18 @@ function xyzPos(stockfishIndex, distance) {
 }
 
 const items = [
-    makeCylWithLabel(0x44aa88, "0", xyzPos(0, 0)),
-    makeCylWithLabel(0x8844aa, "1", xyzPos(1, 1)),
-    makeCylWithLabel(0xaa8844, "2", xyzPos(2, 1)),
-    makeCylWithLabel(0x2266aa, "3", xyzPos(3, 1)),
-    makeCylWithLabel(0x6622aa, "4", xyzPos(4, 1)),
-    makeCylWithLabel(0xaa6622, "5", xyzPos(5, 1)),
-    makeCylWithLabel(0x886622, "6", xyzPos(6, 1)),
+    makeCylWithLabel(makeHexColor(0), "0", xyzPos(0, 0)),
+    makeCylWithLabel(makeHexColor(0), "1", xyzPos(1, 1)),
+    makeCylWithLabel(makeHexColor(0), "2", xyzPos(2, 1)),
+    makeCylWithLabel(makeHexColor(0), "3", xyzPos(3, 1)),
+    makeCylWithLabel(makeHexColor(0), "4", xyzPos(4, 1)),
+    makeCylWithLabel(makeHexColor(0), "5", xyzPos(5, 1)),
+    makeCylWithLabel(makeHexColor(0), "6", xyzPos(6, 1)),
 ];
+
+const scale0 = baseHeight/2;
+const actualHeight = [ 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, ];
+const targetHeight = [ scale0, scale0, scale0, scale0, scale0, scale0, scale0, ];
 
 function main() {
 
@@ -172,31 +225,18 @@ function main() {
       return needResize;
     }
 
-    const actualScale = [ 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, ];
-    const targetScale = [ 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, ];
-    let previousUpdate = 0;
-
     function render( time ) {
-
-      // Every so often change the target height of all the bars
-      if (time - previousUpdate > 1500) {
-        previousUpdate = time;
-        items.forEach((item, ndx) => {
-          targetScale[ndx] = 1.5 - Math.random(); // range 0.5..1.5
-          // item.labelUpdater(new String(time)); REMOVE
-        });
-      }
 
       // Every frame converges the bars on the targets by small steps
       items.forEach((item, ndx) => {
-        let diff = targetScale[ndx] - actualScale[ndx]
+        let diff = targetHeight[ndx] - actualHeight[ndx]
         if (Math.abs(diff) > 0.011) {
             if (diff > 0) {
-              actualScale[ndx] += 0.01;
+              actualHeight[ndx] += 0.01;
             } else {
-              actualScale[ndx] -= 0.01;
+              actualHeight[ndx] -= 0.01;
             }
-            item.updateHeight(actualScale[ndx]);
+            item.updateHeight(actualHeight[ndx]);
         }
       });
 
@@ -292,9 +332,10 @@ function parseResponse(fromServer) {
             }
         }
         if (index > 0 && index < items.length) {
-            dbg(`set label ${index} to ${name}`);
+            dbg(`update ${index} ${name} ${value}`);
             items[index].labelUpdater(name);
-            // TODO set the height and color
+            items[index].cylMaterial.color.setStyle(makeHexColor(value));
+            targetHeight[index] = scale0 + value/3.5;
         }
         break;
     }
