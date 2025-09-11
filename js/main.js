@@ -5,7 +5,20 @@ import {OrbitControls} from 'three/addons/controls/OrbitControls.js';
 const canvas = document.querySelector( '#c' );
 const renderer = new THREE.WebGLRenderer( { antialias: true, canvas } );
 const scene = new THREE.Scene();
-const baseHeight = 3;
+
+// The "base height" of the hexagonal cylinders is their height when the
+// move evaluation is 0 centipawns (neither positive nor negative for the
+// player). The scaling range runs from 0.05 (cylinder's height is 5% of
+// neutralHeight) to 2.45 (245% of neutralHeight). Actual scales converge
+// by 0.01 per frame to target scales so the cylinder heights change smoothly
+// as the evaluation proceeds. We initialize so that the cylinders grow
+// toward the neutral height during initialization.
+const neutralHeight = 2.5;
+const neutralScale = 1.0
+const minScale = 0.05;
+const maxScale = 2.45;
+const actualScale = [ minScale, minScale, minScale, minScale, minScale, minScale, minScale, ];
+const targetScale = [ neutralScale, neutralScale, neutralScale, neutralScale, neutralScale, neutralScale, neutralScale, ];
 
 let serverStatus = "down";
 
@@ -49,7 +62,7 @@ function camera() {
 }
 
 
-const cylGeometry = new THREE.CylinderGeometry(1, 1, baseHeight, 6); // hexagon cross-section
+const cylGeometry = new THREE.CylinderGeometry(1, 1, neutralHeight, 6); // hexagon cross-section
 const labelGeometry = new THREE.CircleGeometry(1, 64); // round disk for label
 
 function makeDynamicLabelTexture(text) {
@@ -142,14 +155,14 @@ function makeCylWithLabel(color, text, vec) {
   });
   const labelMesh = new THREE.Mesh(labelGeometry, labelMaterial);
   labelMesh.rotation.x = 0;
-  labelMesh.position.y = baseHeight/2 + 0.2;
+  labelMesh.position.y = neutralHeight/2 + 0.2;
   group.add(labelMesh);
 
   // --- API: update height ---
   function updateHeight(scaleY) {
     cylMesh.scale.y = scaleY;
-    cylMesh.position.y = baseHeight*(scaleY/2) - baseHeight/2;
-    labelMesh.position.y = baseHeight*scaleY - baseHeight/2 + 0.2;
+    cylMesh.position.y = neutralHeight*(scaleY/2) - neutralHeight/2;
+    labelMesh.position.y = neutralHeight*scaleY - neutralHeight/2 + 0.2;
   }
 
   // Return group plus handles for updates
@@ -202,10 +215,6 @@ const items = [
     makeCylWithLabel(makeHexColor(0), "6", xyzPos(6, 1)),
 ];
 
-const scale0 = baseHeight/2;
-const actualHeight = [ 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, ];
-const targetHeight = [ scale0, scale0, scale0, scale0, scale0, scale0, scale0, ];
-
 function main() {
 
     lights();
@@ -229,14 +238,14 @@ function main() {
 
       // Every frame converges the bars on the targets by small steps
       items.forEach((item, ndx) => {
-        let diff = targetHeight[ndx] - actualHeight[ndx]
+        let diff = targetScale[ndx] - actualScale[ndx]
         if (Math.abs(diff) > 0.011) {
             if (diff > 0) {
-              actualHeight[ndx] += 0.01;
+              actualScale[ndx] += 0.01;
             } else {
-              actualHeight[ndx] -= 0.01;
+              actualScale[ndx] -= 0.01;
             }
-            item.updateHeight(actualHeight[ndx]);
+            item.updateHeight(actualScale[ndx]);
         }
       });
 
@@ -282,6 +291,26 @@ let commState = STATE_START;
 
 const outbound = new utils.MessageQueue();
 
+const goButton = document.getElementById("go");
+const actionText = document.getElementById("action");
+
+goButton.addEventListener("click", function() {
+    const s = actionText.value;
+    dbg(`go: ${s}`);
+    if (s && s.length > 0) {
+        // is a FEN with optional "moves ..." at the end?
+        const fields = s.split(" ");
+        if (fields.length >= 6 && fields[0].includes("/")) {
+            outbound.enqueue("stop\n");
+            outbound.enqueue("isready\n");
+            outbound.enqueue("ucinewgame\n");
+            outbound.enqueue("isready\n");
+            outbound.enqueue("position fen " + s + "\n");
+            outbound.enqueue("go infinite\n");
+        }
+    }
+});
+
 // Parse UCI responses from Stockfish
 // https://official-stockfish.github.io/docs/stockfish-wiki/UCI-&-Commands.html
 // https://backscattering.de/chess/uci/
@@ -313,8 +342,9 @@ function parseResponse(fromServer) {
     case "readyok":
         // The engine is ready to receive commands.
         // For a quick hack, we assume this will be sent only after "ucinewgame"
-        outbound.enqueue("position startpos\n");
-        outbound.enqueue("go infinite\n");
+        // Quick hack removed. User must enter a position in the box and click "go".
+        // outbound.enqueue("position startpos\n");
+        // outbound.enqueue("go infinite\n");
         break;
     case "info":
     {
@@ -335,7 +365,10 @@ function parseResponse(fromServer) {
             dbg(`update ${index} ${name} ${value}`);
             items[index].labelUpdater(name);
             items[index].cylMaterial.color.setStyle(makeHexColor(value));
-            targetHeight[index] = scale0 + value/3.5;
+            let ts = neutralScale + value/2.0;
+            if (ts < 0.05) ts = 0.05;
+            if (ts > 2.45) ts = 2.45;
+            targetScale[index] = ts;
         }
         break;
     }
