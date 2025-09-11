@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import * as utils from './utils.js'
+import * as comms from './comms.js'
 import {OrbitControls} from 'three/addons/controls/OrbitControls.js';
 
 const canvas = document.querySelector( '#c' );
@@ -20,16 +21,8 @@ const maxScale = 2.45;
 const actualScale = [ minScale, minScale, minScale, minScale, minScale, minScale, minScale, ];
 const targetScale = [ neutralScale, neutralScale, neutralScale, neutralScale, neutralScale, neutralScale, neutralScale, ];
 
-let serverStatus = "down";
-
 function dbg(msg) {
     console.log(msg);
-};
-
-function setStatus(msg) {
-    if (msg === null || msg === undefined) return;
-    serverStatus = msg;
-    msgtext.innerText = "server status: " + serverStatus;
 }
 
 function lights() {
@@ -139,8 +132,19 @@ const items = [
     makeCylWithLabel(utils.makeHexColor(0), "6", utils.xyzPos(6, 1)),
 ];
 
-function main() {
+function updateView(index, value, name) {
+    if (index > 0 && index < items.length) {
+        dbg(`update ${index} ${name} ${value}`);
+        items[index].labelUpdater(name);
+        items[index].cylMaterial.color.setStyle(utils.makeHexColor(value));
+        let ts = neutralScale + value/2.0;
+        if (ts < 0.05) ts = 0.05;
+        if (ts > 2.45) ts = 2.45;
+        targetScale[index] = ts;
+    }
+}
 
+function main() {
     lights();
     const cam = camera();
     items.forEach(item => scene.add(item.group));
@@ -190,31 +194,6 @@ document.getElementById("c").addEventListener('keydown', (e) => {
     dbg("key: " + e.keyCode); // TODO 
 });
 
-// The web worker handles the link to the server that fronts Stockfish.
-
-const worker = new Worker(new URL("worker.js", import.meta.url));
-
-// The commState is mostly to handle initialization (connection).
-// We don't display it to users - we only display the simpler serverState.
-// The DEAD state is not recoverable; you have to refresh the page if the
-// server dies. Making it recoverable would require this front end to
-// maintain and save the game state, so it's much more work.
-
-const STATE_START = "uninitialized";
-const STATE_OPENING = "opening";
-const STATE_CONNECTED = "connected";
-const STATE_DEAD = "dead";
-
-let commState = STATE_START;
-
-// Network input side. Only communicates with the output side by enqueuing
-// data to be sent and changing state variables. The argument is typed
-// object from the web worker, not a network message. N.B. timeouts are all
-// sort of "weird" numbers to make it less likely we'll fall into lockstep
-// with other system activities.
-
-const outbound = new utils.MessageQueue();
-
 const goButton = document.getElementById("go");
 const actionText = document.getElementById("action");
 
@@ -225,157 +204,12 @@ goButton.addEventListener("click", function() {
         // is a FEN with optional "moves ..." at the end?
         const fields = s.split(" ");
         if (fields.length >= 6 && fields[0].includes("/")) {
-            outbound.enqueue("stop\n");
-            outbound.enqueue("isready\n");
-            outbound.enqueue("ucinewgame\n");
-            outbound.enqueue("isready\n");
-            outbound.enqueue("position fen " + s + "\n");
-            outbound.enqueue("go infinite\n");
+            comms.startEngine("fen " + s);
+        } else if (s.startsWith("startpos")) {
+            comms.startEngine(s);
         }
     }
 });
 
-// Parse UCI responses from Stockfish
-// https://official-stockfish.github.io/docs/stockfish-wiki/UCI-&-Commands.html
-// https://backscattering.de/chess/uci/
-function parseResponse(fromServer) {
-    dbg(`parseResponse(${fromServer})`);
-    const words = fromServer.split(" ");
-    switch (words[0]) {
-    case "uciok":
-        // Sent at the end of id and options in response to "uci". Init is complete.
-        outbound.enqueue("setoption name MultiPV value 6\n");
-        outbound.enqueue("setoption name UCI_ShowWDL value true\n");
-        outbound.enqueue("ucinewgame\n");
-        outbound.enqueue("isready\n");
-        break;
-    case "id":
-        // next word "name" or "author"; we care about "name Stockfish"
-        if (words[1] == "name") {
-            if (words[2] != "Stockfish") {
-                alert(`This program is designed to work with Stockfish.\n` +
-                      `Execution continues, but ${words[2]} might not work correctly.`);
-            }
-        }
-        break;
-    case "option":
-        // We care about option name MultiPV type spin default 1 min 1 max 256 type:stdout])
-        // And option name UCI_ShowWDL type check default false type:stdout])
-        // For now that's it; in the future, Threads, Ponder, and possibly others.
-        break;
-    case "readyok":
-        // The engine is ready to receive commands.
-        // For a quick hack, we assume this will be sent only after "ucinewgame"
-        // Quick hack removed. User must enter a position in the box and click "go".
-        // outbound.enqueue("position startpos\n");
-        // outbound.enqueue("go infinite\n");
-        break;
-    case "info":
-    {
-        let index = 0;
-        let value = 0.0;
-        let name = "?";
-        for (let i = 0; i < words.length; i++) {
-            let word = words[i];
-            if (word == "multipv") {
-                index = +words[i+1];
-            } else if (word == "cp") {
-                value = +words[i+1] / 100.0;
-            } else if (word == "pv") {
-                name = words[i+1];
-            }
-        }
-        if (index > 0 && index < items.length) {
-            dbg(`update ${index} ${name} ${value}`);
-            items[index].labelUpdater(name);
-            items[index].cylMaterial.color.setStyle(makeHexColor(value));
-            let ts = neutralScale + value/2.0;
-            if (ts < 0.05) ts = 0.05;
-            if (ts > 2.45) ts = 2.45;
-            targetScale[index] = ts;
-        }
-        break;
-    }
-    default:
-        dbg("response ignored");
-        break;
-    }
-}
-
-// Handle messages from worker thread - connect and then give "stdout" to parser.
-
-worker.onmessage = (e) => {
-    const msg = e.data;
-
-    switch (msg.type) {
-    case "started":
-        if (commState == STATE_OPENING) {
-            commState = STATE_CONNECTED;
-            outbound.enqueue("uci\n");
-        } else {
-            dbg("unexpected STARTED message from server ignored");
-        }
-        break;
-    case "error":
-        dbg(`error from server: ${msg.error}`);
-        if (commState == STATE_OPENING) {
-            // do nothing; the transmit side will try again soon.
-        } else if (commState == STATE_CONNECTED) {
-            commState = STATE_DEAD;
-        }
-        break;
-    case "stdout":
-        parseResponse(msg.data);
-        break;
-    case "stderr":
-        dbg(`stderr from Stockfish: ${msg.data}`);
-        break;
-    case "debug":
-        dbg(`debug: ${msg.data}`);
-        break;
-    default: // pong, exit, truly unknown
-        dbg(`onmessage(${msg.type}: ${msg.data} (${msg.status})) ignored`);
-        break;
-    }
-
-    setStatus(msg.status);
-};
-
-function doNet() {
-    let delay = 537;
-    switch (commState) {
-        case STATE_START:
-            // Ask the worker to open the connection and give it a couple of seconds.
-            worker.postMessage({ type: "open", baseUrl: "http://localhost:8080" });
-            commState = STATE_OPENING;
-            delay = 1917;
-            break;
-        case STATE_OPENING:
-            // It's been a couple of seconds and the connection has not opened.
-            // Come back here pretty soon and try again. There's a race here where
-            // if the connection completes during the short time window we're back
-            // in the START state, the worker will create a second connection. I
-            // should fix this.
-            commState = STATE_START;
-            delay = 3;
-            break;
-        case STATE_CONNECTED:
-            // Normal state. If there's a message to Stockfish, send it.
-            if (!outbound.isEmpty()) {
-                worker.postMessage({ type: "stdin", data: outbound.dequeue() });
-            }
-            break;
-        case STATE_DEAD:
-            // There's no way out of the DEAD state except a page refresh.
-            delay = 30*1000*1000;
-            break;
-        default:
-            dbg(`unknown commState ${commState}`);
-            break;
-    }
-
-    setTimeout(doNet, delay);
-}
-
-setTimeout(doNet, 1453);
+comms.start(updateView);
 main();
