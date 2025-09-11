@@ -190,7 +190,6 @@ func envOr(key, def string) string {
 
 // wsRunHandler upgrades to WS, starts the preconfigured CLI, streams stdout/stderr, accepts stdin, and reports exit.
 func wsRunHandler(w http.ResponseWriter, r *http.Request, cfg serverConfig) {
-	log.Printf("wsRunHandler() entered\n");
     // Tighten origin per request
     if cfg.AllowedOrigin != "" {
         upgrader.CheckOrigin = func(r *http.Request) bool { return r.Header.Get("Origin") == cfg.AllowedOrigin }
@@ -248,13 +247,12 @@ func wsRunHandler(w http.ResponseWriter, r *http.Request, cfg serverConfig) {
     go func() {
         for {
             mt, data, err := conn.ReadMessage()
-			log.Printf("received: %v err %v\n", data, err);
             if err != nil { cancel(); return }
             if mt != websocket.TextMessage { cancel(); return }
-			log.Printf("server received: %s\n", string(data))
 
             var msg map[string]any
             if json.Unmarshal(data, &msg) == nil {
+				log.Printf("server received %v\n", msg);
                 switch msg["type"] {
                 case "stdin":
                     if s, _ := msg["data"].(string); s != "" {
@@ -304,7 +302,6 @@ func wsRunHandler(w http.ResponseWriter, r *http.Request, cfg serverConfig) {
 // objects, because it simplifies the client code a little to assume the
 // received JSON always parses as an object.
 func sendJSON(conn *websocket.Conn, v map[string]any) {
-	log.Printf("sendJSON(%v)\n", v)
     // Best-effort send; ignore errors if the client is gone
     _ = conn.WriteJSON(v)
 }
