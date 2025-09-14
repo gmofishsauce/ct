@@ -18,8 +18,13 @@ const neutralHeight = 2.5;
 const neutralScale = 1.0
 const minScale = 0.05;
 const maxScale = 2.45;
-const actualScale = [ minScale, minScale, minScale, minScale, minScale, minScale, minScale, ];
-const targetScale = [ neutralScale, neutralScale, neutralScale, neutralScale, neutralScale, neutralScale, neutralScale, ];
+// XXX TODO put these properties on the object
+const actualScale = [ minScale, minScale, minScale, minScale, minScale, minScale, minScale,
+                      minScale, minScale, minScale, minScale, minScale, minScale, minScale,
+                      minScale, minScale, minScale, minScale, minScale, minScale, minScale ];
+const targetScale = [ neutralScale, neutralScale, neutralScale, neutralScale, neutralScale, neutralScale, neutralScale,
+                      neutralScale, neutralScale, neutralScale, neutralScale, neutralScale, neutralScale, neutralScale,
+                      neutralScale, neutralScale, neutralScale, neutralScale, neutralScale, neutralScale, neutralScale ];
 
 function dbg(msg) {
     console.log(msg);
@@ -82,10 +87,11 @@ function makeDynamicLabelTexture(text) {
 }
 
 // --- Factory function ---
-function makeCylWithLabel(color, text, vec) {
+function makeCylWithLabel(color, text, vec, vis) {
   dbg(`makeCylWithLabel(${color}, ${text}, ${vec[0]}, ${vec[1]}, ${vec[2]}`);
   const group = new THREE.Group();
   group.position.set(vec[0], vec[1], vec[2]);
+  group.visible = vis;
 
   // Cylinder (unique material per cylinder)
   const cylMaterial = new THREE.MeshPhongMaterial({ color });
@@ -123,24 +129,54 @@ function makeCylWithLabel(color, text, vec) {
 }
 
 const items = [
-    makeCylWithLabel(utils.makeHexColor(0), "0", utils.xyzPos(0, 0)),
-    makeCylWithLabel(utils.makeHexColor(0), "1", utils.xyzPos(1, 1)),
-    makeCylWithLabel(utils.makeHexColor(0), "2", utils.xyzPos(2, 1)),
-    makeCylWithLabel(utils.makeHexColor(0), "3", utils.xyzPos(3, 1)),
-    makeCylWithLabel(utils.makeHexColor(0), "4", utils.xyzPos(4, 1)),
-    makeCylWithLabel(utils.makeHexColor(0), "5", utils.xyzPos(5, 1)),
-    makeCylWithLabel(utils.makeHexColor(0), "6", utils.xyzPos(6, 1)),
+    makeCylWithLabel(utils.makeHexColor(0), "0", utils.xyzPos(0, 0), true),
+    makeCylWithLabel(utils.makeHexColor(0), "1", utils.xyzPos(1, 1), true),
+    makeCylWithLabel(utils.makeHexColor(0), "2", utils.xyzPos(2, 1), true),
+    makeCylWithLabel(utils.makeHexColor(0), "3", utils.xyzPos(3, 1), true),
+    makeCylWithLabel(utils.makeHexColor(0), "4", utils.xyzPos(4, 1), true),
+    makeCylWithLabel(utils.makeHexColor(0), "5", utils.xyzPos(5, 1), true),
+    makeCylWithLabel(utils.makeHexColor(0), "6", utils.xyzPos(6, 1), true),
+
+    makeCylWithLabel(utils.makeHexColor(0), "1", utils.xyzPos(1, 2), false),
+    makeCylWithLabel(utils.makeHexColor(0), "2", utils.xyzPos(2, 2), false),
+    makeCylWithLabel(utils.makeHexColor(0), "3", utils.xyzPos(3, 2), false),
+    makeCylWithLabel(utils.makeHexColor(0), "4", utils.xyzPos(4, 2), false),
+    makeCylWithLabel(utils.makeHexColor(0), "5", utils.xyzPos(5, 2), false),
+    makeCylWithLabel(utils.makeHexColor(0), "6", utils.xyzPos(6, 2), false),
+
+    makeCylWithLabel(utils.makeHexColor(0), "1", utils.xyzPos(1, 3), false),
+    makeCylWithLabel(utils.makeHexColor(0), "2", utils.xyzPos(2, 3), false),
+    makeCylWithLabel(utils.makeHexColor(0), "3", utils.xyzPos(3, 3), false),
+    makeCylWithLabel(utils.makeHexColor(0), "4", utils.xyzPos(4, 3), false),
+    makeCylWithLabel(utils.makeHexColor(0), "5", utils.xyzPos(5, 3), false),
+    makeCylWithLabel(utils.makeHexColor(0), "6", utils.xyzPos(6, 3), false),
 ];
 
-function updateView(index, value, name) {
+function boundScale(pawnValue) {
+    let result = neutralScale + pawnValue/2.0;
+    if (result < 0.05) result = 0.05;
+    if (result > 2.45) result = 2.45;
+    return result;
+}
+
+function updateView(index, value, name, restOfLine) {
     if (index > 0 && index < items.length) {
-        dbg(`update ${index} ${name} ${value}`);
         items[index].labelUpdater(name);
         items[index].cylMaterial.color.setStyle(utils.makeHexColor(value));
-        let ts = neutralScale + value/2.0;
-        if (ts < 0.05) ts = 0.05;
-        if (ts > 2.45) ts = 2.45;
-        targetScale[index] = ts;
+        targetScale[index] = boundScale(value);
+        // Now blow out to more cylinders if there is analysis to support
+        // or make previously-blown-out cylinders invisible if there isn't.
+        if (restOfLine.length < 2) {
+            items[ 6 + index].group.visible = false;
+            items[12 + index].group.visible = false;
+        } else {
+            targetScale[ 6 + index] = targetScale[index];
+            items[ 6 + index].group.visible = true;
+            items[ 6 + index].labelUpdater(restOfLine[0]);
+            targetScale[12 + index] = targetScale[index];
+            items[12 + index].group.visible = true;
+            items[12 + index].labelUpdater(restOfLine[1]);
+        }
     }
 }
 

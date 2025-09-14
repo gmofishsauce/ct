@@ -79,12 +79,6 @@ type serverConfig struct {
     FixedArgs     []string // from CLI_ARGS (comma-separated)
 }
 
-var upgrader = websocket.Upgrader{
-    ReadBufferSize:  32 * 1024,
-    WriteBufferSize: 32 * 1024,
-    CheckOrigin: func(r *http.Request) bool { return true }, // tightened per-request below
-}
-
 func main() {
     cfg, err := loadConfig()
     if err != nil {
@@ -190,14 +184,21 @@ func envOr(key, def string) string {
 
 // wsRunHandler upgrades to WS, starts the preconfigured CLI, streams stdout/stderr, accepts stdin, and reports exit.
 func wsRunHandler(w http.ResponseWriter, r *http.Request, cfg serverConfig) {
+	var upgrader = websocket.Upgrader{
+		ReadBufferSize:  32 * 1024,
+		WriteBufferSize: 32 * 1024,
+		CheckOrigin: func(r *http.Request) bool { return true }, // tightened per-request below
+	}
     // Tighten origin per request
     if cfg.AllowedOrigin != "" {
         upgrader.CheckOrigin = func(r *http.Request) bool { return r.Header.Get("Origin") == cfg.AllowedOrigin }
     }
+
     conn, err := upgrader.Upgrade(w, r, nil)
     if err != nil { log.Printf("ws upgrade: %v", err); return }
     defer conn.Close()
 
+	// Now the external command (Stockfish)...
     ctx, cancel := context.WithCancel(r.Context())
     defer cancel()
 
@@ -219,7 +220,7 @@ func wsRunHandler(w http.ResponseWriter, r *http.Request, cfg serverConfig) {
     var wg sync.WaitGroup
     wg.Add(2)
 
-    // Stream stdout lines
+    // Stream stdout lines back to the web client
     go func() {
         defer wg.Done()
         scanner := bufio.NewScanner(stdout)
@@ -232,7 +233,7 @@ func wsRunHandler(w http.ResponseWriter, r *http.Request, cfg serverConfig) {
 		}
 	}()
 
-    // Stream stderr lines
+    // Stream stderr lines back to the web client
     go func() {
         defer wg.Done()
         scanner := bufio.NewScanner(stderr)
@@ -243,7 +244,7 @@ func wsRunHandler(w http.ResponseWriter, r *http.Request, cfg serverConfig) {
 		}
     }()
 
-    // Reader: stdin/signal/keepalive
+    // Reader: stdin/signal/keepalive from the web client
     go func() {
         for {
             mt, data, err := conn.ReadMessage()
@@ -258,7 +259,7 @@ func wsRunHandler(w http.ResponseWriter, r *http.Request, cfg serverConfig) {
                     if s, _ := msg["data"].(string); s != "" {
 						if _, e := stdin.Write([]byte(s)); e != nil {
 							sendJSON(conn, map[string]any{
-								"type":"error","error":fmt.Sprintf("writing to Stock: %v", e),
+								"type":"error","error":fmt.Sprintf("writing to Stockfish: %v", e),
 							})
 						}
 					}

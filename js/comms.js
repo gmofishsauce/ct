@@ -115,6 +115,18 @@ function parseResponse(fromServer) {
         let index = 0;
         let value = 0.0;
         let name = "?";
+        let nameIndex = words.length;
+        let restOfLine = [];
+
+        // An info line from Stockfish can look like this, with just one move on the preferred variation (pv):
+        // info depth 3 seldepth 4 multipv 1 score cp 38 nodes 347 nps 347000 hashfull 0 tbhits 0 time 1 pv c2c4
+        // If the UCI_ShowWDL option is true (we set it), there are more fields. We don't currently use these.
+        //
+        // Later in analysis, an info line can end like this:
+        // [ ... ] time 11 pv e2e4 c7c5 g1f3 b8c6 b1c3 e7e6 d2d4 c5d4 f3d4 g8f6 d4b5 d7d5 e4d5 e6d5
+        // There are now many more moves on the preferred variation starting with ("named") e2e4.
+        // These additional moves, if any, are passed to the display update function in restOfLine.
+
         for (let i = 0; i < words.length; i++) {
             let word = words[i];
             if (word == "multipv") {
@@ -122,10 +134,14 @@ function parseResponse(fromServer) {
             } else if (word == "cp") {
                 value = +words[i+1] / 100.0;
             } else if (word == "pv") {
-                name = words[i+1];
+                nameIndex = i+1;
+                name = words[nameIndex];
             }
         }
-        updater(index, value, name);
+        if (words.length > 1+nameIndex) {
+            restOfLine = words.slice(1+nameIndex);   
+        }
+        updater(index, value, name, restOfLine);
         break;
     }
     default:
