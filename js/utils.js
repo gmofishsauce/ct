@@ -1,14 +1,16 @@
+import * as THREE from 'three';
+
 // === Position translation support ===
 
 // See https://www.redblobgames.com/grids/hexagons/
 // These are axial coordinates [q, r] with s derived.
-// The order of the offsets is designed along with the 
+// The order of the basisVectors is designed along with the 
 // Stockfish responses to place taller "terrain" at the
 // back right and lower terrain at the front left. We put
-// 0, 0, 0 in the offsets as offset [0] because Stockfish
-// traces start with 1.
+// 0, 0, 0 in the basisVectors as offset [0] because Stockfish
+// index move traces from 1 to N.
 
-const offsets = [
+const basisVectors = [
     [ 0,  0], // 0, not a direction: s is 0
     [ 1, -1], // 1: s is 0
     [ 0, -1], // 2: s is 1
@@ -23,7 +25,7 @@ const s3ov2 = sqrt3/2;
 const t3ov2 = 3./2;
 
 export function xyzPos(stockfishIndex, distance) {
-    const hex = offsets[stockfishIndex];
+    const hex = basisVectors[stockfishIndex];
     const x   = sqrt3*hex[0]  +  s3ov2*hex[1];
     const z   =                  t3ov2*hex[1];
     return [x*distance, 0, z*distance];
@@ -80,3 +82,34 @@ function rgbToHex(a) {
 export function makeHexColor(pawns) {
     return rgbToHex(makeColor(pawns));
 }
+
+/* === Mouse picking === */
+
+export class PickHelper {
+  constructor() {
+    this.raycaster = new THREE.Raycaster();
+    this.pickedObject = null;
+    this.pickedObjectSavedColor = "#000000";
+  }
+
+  pick(x, y, scene, camera) {
+    // restore the color if there is a picked object
+    if (this.pickedObject) {
+      this.pickedObject.material.color.setStyle(this.pickedObjectSavedColor);
+      this.pickedObject = undefined;
+    }
+
+    // cast a ray through the frustum
+    const normalizedPosition = { x, y };
+    this.raycaster.setFromCamera(normalizedPosition, camera);
+    // get the list of objects the ray intersected
+    const intersectedObjects = this.raycaster.intersectObjects(scene.children);
+    if (intersectedObjects.length) {
+      // pick the first object. It's the closest one
+      this.pickedObject = intersectedObjects[0].object;
+      this.pickedObjectSavedColor = this.pickedObject.material.color.getStyle();
+      this.pickedObject.material.color.setStyle("#FFFFFF");
+    }
+  }
+}
+

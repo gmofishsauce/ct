@@ -15,3 +15,34 @@ Running (for now)
     there is no "blowout" to more hexes yet.
 
 Initially set MultiPV = 6
+
+Right click on center object: no action - it's dead.
+Right click on hex at distance 1 from center:
+    three menu items: "Expand Left", "Expand Right", and "Center"
+    At distance 2, on any of the 12 possible nodes, you just get "Center".
+Hexes at distance > 2 freeze (color = light blue) at last recorded vertical scale.
+
+Implementation
+Better put the vertical scale factors on the objects first.
+Then, put the object's {q, r} on the object.
+
+Not clear
+Can I put ALL the indexing stuff on the objects and just have a "sea of objects"
+OR do I need to access objects by some kind of index.
+
+Ah - I only need to access hexcyls by index when updating from Stockfish.
+So each running Stockfish instance needs to know its "zero" object,
+    and the objects indexed by its traces have to be "contiguous".
+
+So, ah ah - An unordered sea of hexcyls with an ordered array of hexcyls
+    references (indices? pointers? what?) used at Stockfish update time.
+
+Bottom line:
+Finish basic mouse selection ("demo")
+Put actual and target scales on the objects
+Move existing demo to a sea of objects with one mapping array
+Add a second Stockfish instance and make sure nothing breaks
+Change the mapping arrays to be associated with the Stockfish instances
+
+
+

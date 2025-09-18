@@ -1,34 +1,12 @@
 import * as THREE from 'three';
 import * as utils from './utils.js'
+import { PickHelper } from './utils.js';
 import * as comms from './comms.js'
 import {OrbitControls} from 'three/addons/controls/OrbitControls.js';
 
 const canvas = document.querySelector( '#c' );
 const renderer = new THREE.WebGLRenderer( { antialias: true, canvas } );
 const scene = new THREE.Scene();
-
-// The "base height" of the hexagonal cylinders is their height when the
-// move evaluation is 0 centipawns (neither positive nor negative for the
-// player). The scaling range runs from 0.05 (cylinder's height is 5% of
-// neutralHeight) to 2.45 (245% of neutralHeight). Actual scales converge
-// by 0.01 per frame to target scales so the cylinder heights change smoothly
-// as the evaluation proceeds. We initialize so that the cylinders grow
-// toward the neutral height during initialization.
-const neutralHeight = 2.5;
-const neutralScale = 1.0
-const minScale = 0.05;
-const maxScale = 2.45;
-// XXX TODO put these properties on the object
-const actualScale = [ minScale, minScale, minScale, minScale, minScale, minScale, minScale,
-                      minScale, minScale, minScale, minScale, minScale, minScale, minScale,
-                      minScale, minScale, minScale, minScale, minScale, minScale, minScale ];
-const targetScale = [ neutralScale, neutralScale, neutralScale, neutralScale, neutralScale, neutralScale, neutralScale,
-                      neutralScale, neutralScale, neutralScale, neutralScale, neutralScale, neutralScale, neutralScale,
-                      neutralScale, neutralScale, neutralScale, neutralScale, neutralScale, neutralScale, neutralScale ];
-
-function dbg(msg) {
-    console.log(msg);
-}
 
 function lights() {
     const lightColor = 0xFFFFFF;
@@ -57,6 +35,31 @@ function camera() {
     controls.update();
 
     return camera;
+}
+
+const cam = camera();
+
+// The "base height" of the hexagonal cylinders is their height when the
+// move evaluation is 0 centipawns (neither positive nor negative for the
+// player). The scaling range runs from 0.05 (cylinder's height is 5% of
+// neutralHeight) to 2.45 (245% of neutralHeight). Actual scales converge
+// by 0.01 per frame to target scales so the cylinder heights change smoothly
+// as the evaluation proceeds. We initialize so that the cylinders grow
+// toward the neutral height during initialization.
+const neutralHeight = 2.5;
+const neutralScale = 1.0
+const minScale = 0.05;
+const maxScale = 2.45;
+// XXX TODO put these properties on the object
+const actualScale = [ minScale, minScale, minScale, minScale, minScale, minScale, minScale,
+                      minScale, minScale, minScale, minScale, minScale, minScale, minScale,
+                      minScale, minScale, minScale, minScale, minScale, minScale, minScale ];
+const targetScale = [ neutralScale, neutralScale, neutralScale, neutralScale, neutralScale, neutralScale, neutralScale,
+                      neutralScale, neutralScale, neutralScale, neutralScale, neutralScale, neutralScale, neutralScale,
+                      neutralScale, neutralScale, neutralScale, neutralScale, neutralScale, neutralScale, neutralScale ];
+
+function dbg(msg) {
+    console.log(msg);
 }
 
 
@@ -182,7 +185,6 @@ function updateView(index, value, name, restOfLine) {
 
 function main() {
     lights();
-    const cam = camera();
     items.forEach(item => scene.add(item.group));
 
     // OK, Action!
@@ -211,6 +213,10 @@ function main() {
             }
             item.updateHeight(actualScale[ndx]);
         }
+        // TODO there's no need for this unless the camera position
+        // has changed. Can we efficiently detect changes in the
+        // camera position?
+        item.labelMesh.lookAt(cam.position);
       });
 
       if (resizeRendererToDisplaySize(renderer)) {
@@ -245,6 +251,24 @@ goButton.addEventListener("click", function() {
             comms.startEngine(s);
         }
     }
+});
+
+const pickHelper = new PickHelper()
+
+function getCanvasRelativePosition(event) {
+  const rect = canvas.getBoundingClientRect();
+  return {
+    x: (event.clientX - rect.left) * canvas.width  / rect.width,
+    y: (event.clientY - rect.top ) * canvas.height / rect.height,
+  };
+}
+
+document.getElementById("c").addEventListener('click', (e) => {
+    dbg(`click ${e.clientX} ${e.clientY}`);
+    const pos = getCanvasRelativePosition(event);
+    const x = (pos.x / canvas.width ) *  2 - 1;
+    const y = (pos.y / canvas.height) * -2 + 1;  // note we flip Y
+    pickHelper.pick(x, y, scene, cam);
 });
 
 comms.start(updateView);

@@ -81,10 +81,10 @@ const outbound = new MessageQueue();
 // https://official-stockfish.github.io/docs/stockfish-wiki/UCI-&-Commands.html
 // https://backscattering.de/chess/uci/
 function parseResponse(fromServer) {
-    dbg(`parseResponse(${fromServer})`);
     const words = fromServer.split(" ");
     switch (words[0]) {
     case "uciok":
+        dbg(`parseResponse(${fromServer})`);
         // Sent at the end of id and options in response to "uci". Init is complete.
         outbound.enqueue("setoption name MultiPV value 6\n");
         outbound.enqueue("setoption name UCI_ShowWDL value true\n");
@@ -92,6 +92,7 @@ function parseResponse(fromServer) {
         outbound.enqueue("isready\n");
         break;
     case "id":
+        dbg(`parseResponse(${fromServer})`);
         // next word "name" or "author"; we care about "name Stockfish"
         if (words[1] == "name") {
             if (words[2] != "Stockfish") {
@@ -101,11 +102,13 @@ function parseResponse(fromServer) {
         }
         break;
     case "option":
+        dbg(`parseResponse(${fromServer})`);
         // We care about option name MultiPV type spin default 1 min 1 max 256 type:stdout])
         // And option name UCI_ShowWDL type check default false type:stdout])
         // For now that's it; in the future, Threads, Ponder, and possibly others.
         break;
     case "readyok":
+        dbg(`parseResponse(${fromServer})`);
         // For now we don't need to anything if the engine says it's ready - we
         // just send commands and count on typeahead into the pipe from the server
         // to the chess CLI to hold commands until the server is ready.
@@ -127,6 +130,11 @@ function parseResponse(fromServer) {
         // There are now many more moves on the preferred variation starting with ("named") e2e4.
         // These additional moves, if any, are passed to the display update function in restOfLine.
 
+        if (words.length < 8) {
+            // short info line like "info depth 27 currmove h2h3 currmovenumber 6" not used right now
+            break;
+        }
+        dbg(`parseResponse(${fromServer})`);
         for (let i = 0; i < words.length; i++) {
             let word = words[i];
             if (word == "multipv") {
