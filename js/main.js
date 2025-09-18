@@ -50,13 +50,6 @@ const neutralHeight = 2.5;
 const neutralScale = 1.0
 const minScale = 0.05;
 const maxScale = 2.45;
-// XXX TODO put these properties on the object
-const actualScale = [ minScale, minScale, minScale, minScale, minScale, minScale, minScale,
-                      minScale, minScale, minScale, minScale, minScale, minScale, minScale,
-                      minScale, minScale, minScale, minScale, minScale, minScale, minScale ];
-const targetScale = [ neutralScale, neutralScale, neutralScale, neutralScale, neutralScale, neutralScale, neutralScale,
-                      neutralScale, neutralScale, neutralScale, neutralScale, neutralScale, neutralScale, neutralScale,
-                      neutralScale, neutralScale, neutralScale, neutralScale, neutralScale, neutralScale, neutralScale ];
 
 function dbg(msg) {
     console.log(msg);
@@ -122,12 +115,14 @@ function makeCylWithLabel(color, text, vec, vis) {
 
   // Return group plus handles for updates
   return {
-    group,           // add to scene
-    cylMesh,         // access mesh
-    cylMaterial,     // change color
-    labelMesh,       // access label mesh
-    labelUpdater: dynamicLabel.update, // change text
-    updateHeight,    // change height
+    group,            // add to scene
+    cylMesh,          // access mesh
+    cylMaterial,      // change color
+    labelMesh,        // access label mesh
+    labelUpdater: dynamicLabel.update, // change text XXX TODO change name to updataLabel
+    updateHeight,     // change height
+    targetScale: neutralScale,
+    actualScale: neutralScale,
   };
 }
 
@@ -157,8 +152,8 @@ const items = [
 
 function boundScale(pawnValue) {
     let result = neutralScale + pawnValue/2.0;
-    if (result < 0.05) result = 0.05;
-    if (result > 2.45) result = 2.45;
+    if (result < minScale) result = minScale;
+    if (result > maxScale) result = maxScale;
     return result;
 }
 
@@ -166,17 +161,17 @@ function updateView(index, value, name, restOfLine) {
     if (index > 0 && index < items.length) {
         items[index].labelUpdater(name);
         items[index].cylMaterial.color.setStyle(utils.makeHexColor(value));
-        targetScale[index] = boundScale(value);
+        items[index].targetScale = boundScale(value);
         // Now blow out to more cylinders if there is analysis to support
         // or make previously-blown-out cylinders invisible if there isn't.
         if (restOfLine.length < 2) {
             items[ 6 + index].group.visible = false;
             items[12 + index].group.visible = false;
         } else {
-            targetScale[ 6 + index] = targetScale[index];
+            items[ 6 + index].targetScale = items[index].targetScale;
             items[ 6 + index].group.visible = true;
             items[ 6 + index].labelUpdater(restOfLine[0]);
-            targetScale[12 + index] = targetScale[index];
+            items[12 + index].targetScale = items[index].targetScale;
             items[12 + index].group.visible = true;
             items[12 + index].labelUpdater(restOfLine[1]);
         }
@@ -204,14 +199,14 @@ function main() {
 
       // Every frame converges the bars on the targets by small steps
       items.forEach((item, ndx) => {
-        let diff = targetScale[ndx] - actualScale[ndx]
+        let diff = item.targetScale - item.actualScale;
         if (Math.abs(diff) > 0.011) {
             if (diff > 0) {
-              actualScale[ndx] += 0.01;
+              item.actualScale += 0.01;
             } else {
-              actualScale[ndx] -= 0.01;
+              item.actualScale -= 0.01;
             }
-            item.updateHeight(actualScale[ndx]);
+            item.updateHeight(item.actualScale);
         }
         // TODO there's no need for this unless the camera position
         // has changed. Can we efficiently detect changes in the
