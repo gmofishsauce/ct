@@ -4,6 +4,10 @@ import { PickHelper } from './utils.js';
 import * as comms from './comms.js'
 import {OrbitControls} from 'three/addons/controls/OrbitControls.js';
 
+function dbg(msg) {
+    console.log(msg);
+}
+
 const canvas = document.querySelector( '#c' );
 const renderer = new THREE.WebGLRenderer( { antialias: true, canvas } );
 const scene = new THREE.Scene();
@@ -46,15 +50,10 @@ const cam = camera();
 // by 0.01 per frame to target scales so the cylinder heights change smoothly
 // as the evaluation proceeds. We initialize so that the cylinders grow
 // toward the neutral height during initialization.
-const neutralHeight = 2.5;
+const neutralHeight = 3.0;
 const neutralScale = 1.0
 const minScale = 0.05;
-const maxScale = 2.45;
-
-function dbg(msg) {
-    console.log(msg);
-}
-
+const maxScale = 1.95;
 
 const cylGeometry = new THREE.CylinderGeometry(1, 1, neutralHeight, 6); // hexagon cross-section
 const labelGeometry = new THREE.CircleGeometry(1, 64); // round disk for label
@@ -119,7 +118,7 @@ function makeCylWithLabel(color, text, vec, vis) {
     cylMesh,          // access mesh
     cylMaterial,      // change color
     labelMesh,        // access label mesh
-    labelUpdater: dynamicLabel.update, // change text XXX TODO change name to updataLabel
+    updateLabel: dynamicLabel.update, // change text XXX TODO change name to updataLabel
     updateHeight,     // change height
     targetScale: neutralScale,
     actualScale: neutralScale,
@@ -159,7 +158,7 @@ function boundScale(pawnValue) {
 
 function updateView(index, value, name, restOfLine) {
     if (index > 0 && index < items.length) {
-        items[index].labelUpdater(name);
+        items[index].updateLabel(name);
         items[index].cylMaterial.color.setStyle(utils.makeHexColor(value));
         items[index].targetScale = boundScale(value);
         // Now blow out to more cylinders if there is analysis to support
@@ -170,10 +169,10 @@ function updateView(index, value, name, restOfLine) {
         } else {
             items[ 6 + index].targetScale = items[index].targetScale;
             items[ 6 + index].group.visible = true;
-            items[ 6 + index].labelUpdater(restOfLine[0]);
+            items[ 6 + index].updateLabel(restOfLine[0]);
             items[12 + index].targetScale = items[index].targetScale;
             items[12 + index].group.visible = true;
-            items[12 + index].labelUpdater(restOfLine[1]);
+            tems[12 + index].updateLabel(restOfLine[1]);
         }
     }
 }
