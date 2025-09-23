@@ -12,6 +12,9 @@ const canvas = document.querySelector( '#c' );
 const renderer = new THREE.WebGLRenderer( { antialias: true, canvas } );
 const scene = new THREE.Scene();
 
+// The server for the centered hexcyl - sets MultiPV to 6.
+let primaryServer = null;
+
 function lights() {
     const lightColor = 0xFFFFFF;
     let lightIntensity = 2;
@@ -172,7 +175,7 @@ function updateView(index, value, name, restOfLine) {
             items[ 6 + index].updateLabel(restOfLine[0]);
             items[12 + index].targetScale = items[index].targetScale;
             items[12 + index].group.visible = true;
-            tems[12 + index].updateLabel(restOfLine[1]);
+            items[12 + index].updateLabel(restOfLine[1]);
         }
     }
 }
@@ -240,9 +243,9 @@ goButton.addEventListener("click", function() {
         // is a FEN with optional "moves ..." at the end?
         const fields = s.split(" ");
         if (fields.length >= 6 && fields[0].includes("/")) {
-            comms.startEngine("fen " + s);
+            primaryServer.startEngine("fen " + s);
         } else if (s.startsWith("startpos")) {
-            comms.startEngine(s);
+            primaryServer.startEngine(s);
         }
     }
 });
@@ -265,5 +268,9 @@ document.getElementById("c").addEventListener('click', (e) => {
     pickHelper.pick(x, y, scene, cam);
 });
 
-comms.start(updateView);
+// Finally, start me up.
+
+primaryServer = new comms.ServerConnection(updateView);
+primaryServer.start();
 main();
+

@@ -38,8 +38,8 @@ So, ah ah - An unordered sea of hexcyls with an ordered array of hexcyls
     references (indices? pointers? what?) used at Stockfish update time.
 
 Bottom line:
-Finish basic mouse selection ("demo")
-Put actual and target scales on the objects
+DONE Finish basic mouse selection ("demo")
+DONE Put actual and target scales on the objects
 Move existing demo to a sea of objects with one mapping array
 Add a second Stockfish instance and make sure nothing breaks
 Change the mapping arrays to be associated with the Stockfish instances

@@ -21,6 +21,9 @@
 // In addition, all messages posted by this worker aside debug messages
 // should contain a "status" field: status: statusString(ws) which correctly
 // handles a possible null ws.
+//
+// Web workers each get their own "global" scope, so the entire question
+// of loading as a traditional script versus ES6 module doesn't even apply.
 
 let ws = null;
 let baseUrl = "";
