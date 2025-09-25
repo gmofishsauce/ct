@@ -1,6 +1,5 @@
 import * as THREE from 'three';
 import * as utils from './utils.js'
-import { PickHelper } from './utils.js';
 import * as comms from './comms.js'
 import {OrbitControls} from 'three/addons/controls/OrbitControls.js';
 
@@ -90,10 +89,12 @@ function makeCylWithLabel(color, text, vec, vis) {
   const group = new THREE.Group();
   group.position.set(vec[0], vec[1], vec[2]);
   group.visible = vis;
+  group.name = "GROUP";
 
   // Cylinder (unique material per cylinder)
   const cylMaterial = new THREE.MeshPhongMaterial({ color });
   const cylMesh = new THREE.Mesh(cylGeometry, cylMaterial);
+  cylMesh.name = "CYL"; // used in PickHelper
   group.add(cylMesh);
 
   // Label (unique material + texture per label)
@@ -106,6 +107,7 @@ function makeCylWithLabel(color, text, vec, vis) {
   const labelMesh = new THREE.Mesh(labelGeometry, labelMaterial);
   labelMesh.rotation.x = 0;
   labelMesh.position.y = neutralHeight/2 + 0.2;
+  labelMesh.name = "LABEL";
   group.add(labelMesh);
 
   // --- API: update height ---
@@ -121,7 +123,7 @@ function makeCylWithLabel(color, text, vec, vis) {
     cylMesh,          // access mesh
     cylMaterial,      // change color
     labelMesh,        // access label mesh
-    updateLabel: dynamicLabel.update, // change text XXX TODO change name to updataLabel
+    updateLabel: dynamicLabel.update,
     updateHeight,     // change height
     targetScale: neutralScale,
     actualScale: neutralScale,
@@ -137,6 +139,7 @@ const items = [
     makeCylWithLabel(utils.makeHexColor(0), "5", utils.xyzPos(5, 1), true),
     makeCylWithLabel(utils.makeHexColor(0), "6", utils.xyzPos(6, 1), true),
 
+    /* Commented out while evolve the code to generalized navigation
     makeCylWithLabel(utils.makeHexColor(0), "1", utils.xyzPos(1, 2), false),
     makeCylWithLabel(utils.makeHexColor(0), "2", utils.xyzPos(2, 2), false),
     makeCylWithLabel(utils.makeHexColor(0), "3", utils.xyzPos(3, 2), false),
@@ -150,6 +153,7 @@ const items = [
     makeCylWithLabel(utils.makeHexColor(0), "4", utils.xyzPos(4, 3), false),
     makeCylWithLabel(utils.makeHexColor(0), "5", utils.xyzPos(5, 3), false),
     makeCylWithLabel(utils.makeHexColor(0), "6", utils.xyzPos(6, 3), false),
+    */
 ];
 
 function boundScale(pawnValue) {
@@ -164,6 +168,10 @@ function updateView(index, value, name, restOfLine) {
         items[index].updateLabel(name);
         items[index].cylMaterial.color.setStyle(utils.makeHexColor(value));
         items[index].targetScale = boundScale(value);
+
+        /* Removed while we build out general handling for many hexcyls.
+         * Definitions of these hexcyls are also commented out in items[].
+
         // Now blow out to more cylinders if there is analysis to support
         // or make previously-blown-out cylinders invisible if there isn't.
         if (restOfLine.length < 2) {
@@ -177,6 +185,8 @@ function updateView(index, value, name, restOfLine) {
             items[12 + index].group.visible = true;
             items[12 + index].updateLabel(restOfLine[1]);
         }
+        */
+
     }
 }
 
@@ -250,7 +260,7 @@ goButton.addEventListener("click", function() {
     }
 });
 
-const pickHelper = new PickHelper()
+const pickHelper = new utils.PickHelper()
 
 function getCanvasRelativePosition(event) {
   const rect = canvas.getBoundingClientRect();

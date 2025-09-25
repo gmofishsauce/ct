@@ -5,7 +5,7 @@ Startup:
     DONE send fixed initialization to server.
 DONE If not responding:
     DONE message in status bar, button says "start", text box gray.
-When server connection:
+LATER (text UI is adequate for now): When server connection:
     pale "startpos" message in status bar, button says "Go!".
     click button -> startpos to server
     FEN into text box, click button -> FEN to server
@@ -45,4 +45,16 @@ Add a second Stockfish instance and make sure nothing breaks
 Change the mapping arrays to be associated with the Stockfish instances
 
 
-
+More about the model (9/23/2025):
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+I need to put {q, r} on the nameless objects returned by makeCylWithLabel().
+Reduce initial display to just the center cylinder.
+Add a function requireHexcyl(...) that either makes a new hexcyl at {q, r}
+    or returns the existing hexcyl.
+There will be one primary server (MultiPV = 6) and N secondaries (MultiPV = 3)
+N will be a parameter with a default value, eventually a "Settings..." button
+[ side note: mouse over hexcyl => put FEN in text box "for real" ]
+[ side note: try showing just the centered node on the chessboard ]
+clicking on centered node does nothing
+single click on non-centered node starts a secondary centered on that node
+double click on non-centered node centers that node, freezing some node(s).

@@ -1,5 +1,16 @@
 import * as THREE from 'three';
 
+function dbg(msg) {
+    console.log(msg);
+}
+
+function dbobj(obj) {
+    dbg("=== Properties of ${obj}: ===");
+    for (let prop in obj) {
+        console.log(`  ${prop}: ${obj[prop]}`);
+    }
+}
+
 // === Position translation support ===
 
 // See https://www.redblobgames.com/grids/hexagons/
@@ -86,30 +97,41 @@ export function makeHexColor(pawns) {
 /* === Mouse picking === */
 
 export class PickHelper {
-  constructor() {
-    this.raycaster = new THREE.Raycaster();
-    this.pickedObject = null;
-    this.pickedObjectSavedColor = "#000000";
-  }
-
-  pick(x, y, scene, camera) {
-    // restore the color if there is a picked object
-    if (this.pickedObject) {
-      this.pickedObject.material.color.setStyle(this.pickedObjectSavedColor);
-      this.pickedObject = undefined;
+    constructor() {
+        this.raycaster = new THREE.Raycaster();
+        this.pickedObject = null;
+        this.pickedObjectSavedColor = "#000000";
     }
 
-    // cast a ray through the frustum
-    const normalizedPosition = { x, y };
-    this.raycaster.setFromCamera(normalizedPosition, camera);
-    // get the list of objects the ray intersected
-    const intersectedObjects = this.raycaster.intersectObjects(scene.children);
-    if (intersectedObjects.length) {
-      // pick the first object. It's the closest one
-      this.pickedObject = intersectedObjects[0].object;
-      this.pickedObjectSavedColor = this.pickedObject.material.color.getStyle();
-      this.pickedObject.material.color.setStyle("#FFFFFF");
+    pick(x, y, scene, camera) {
+        // restore the color if there is a picked object
+        if (this.pickedObject) {
+            this.pickedObject.material.color.setStyle(this.pickedObjectSavedColor);
+            this.pickedObject = undefined;
+        }
+
+        // cast a ray through the frustum
+        const normalizedPosition = { x, y };
+        this.raycaster.setFromCamera(normalizedPosition, camera);
+        // get the list of objects the ray intersected
+        const intersectedObjects = this.raycaster.intersectObjects(scene.children);
+        let picked = null;
+        for (let drill of intersectedObjects) {
+            // The list of intersected objects drills inward when one object obscures another.
+            // The cylinder mesh can be obscured by the label mesh (it's not necessarily [0]).
+            // Intersected objects are often but not always triangles. Their mesh is in .object.
+            if (drill.name == "CYL") {
+                picked = drill;
+            } else if (drill.object && drill.object.name == "CYL") {
+                picked = drill.object;
+            }
+            if (picked != null) {
+                this.pickedObject = picked;
+                this.pickedObjectSavedColor = this.pickedObject.material.color.getStyle();
+                this.pickedObject.material.color.setStyle("#FFFFFF");
+                break;
+            }
+        }
     }
-  }
 }
 
