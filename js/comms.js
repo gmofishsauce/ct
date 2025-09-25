@@ -4,6 +4,13 @@ function dbg(msg) {
     console.log(msg);
 }
 
+function dbobj(obj) {
+    dbg("=== Properties of ${obj}: ===");
+    for (let prop in obj) {
+        console.log(`  ${prop}: ${obj[prop]}`);
+    }
+}
+
 // One instance of private class MessageQueue is used per ServerConnection
 // to hold messages outbound to the chess server (Stockfish)
 class MessageQueue {
@@ -43,16 +50,16 @@ class MessageQueue {
 }
 
 // The commState is mostly to handle initialization (connection).
-// We don't display it to users - we only display the simpler serverState.
-// The DEAD state is not recoverable; you have to refresh the page if the
-// server dies. Making it recoverable would require this front end to
-// maintain and save the game state, so it's much more work.
+// We also display it to users in the status bar.
+// The DEAD state is not recoverable; you have to refresh the page if
+// the server dies. Making it recoverable would require this front end
+// to maintain and save the game state, so it's much more work.
 // Note: weirdly, Javascript does not allow class-local constants.
 
-const STATE_START = "uninitialized";
-const STATE_OPENING = "opening";
-const STATE_CONNECTED = "connected";
-const STATE_DEAD = "dead";
+const STATE_START = "not started";
+const STATE_OPENING = "connecting";
+const STATE_CONNECTED = "running";
+const STATE_DEAD = "dead (refresh required)";
 
 // The web worker handles the link to the server that fronts Stockfish.
 // The updater is a callback function to update the display on info messages.
@@ -66,7 +73,6 @@ export class ServerConnection {
         this.updater = updateFunc;
         this.outbound = new MessageQueue();
         this.commState = STATE_START;
-        this.serverStatus = "not started";
         this.worker = new Worker(new URL("./worker.js", import.meta.url), {
             type: "module"
         });
@@ -75,20 +81,20 @@ export class ServerConnection {
         };
     }
 
-    setStatus(msg) {
-        if (msg === null || msg === undefined) return;
-        this.serverStatus = msg;
-        msgtext.innerText = "server status: " + serverStatus;
+    setStatus() {
+        if (this.commState === null || this.commState === undefined) return;
+        msgtext.innerText = "server status: " + this.commState;
     }
 
     // Parse UCI responses from Stockfish
     // https://official-stockfish.github.io/docs/stockfish-wiki/UCI-&-Commands.html
     // https://backscattering.de/chess/uci/
     parseResponse(fromServer) {
-        const words = fromServer.split(" ");
+        const line = fromServer.data;
+        const words = line.split(" ");
         switch (words[0]) {
         case "uciok":
-            dbg(`parseResponse(${fromServer})`);
+            dbg(`parseResponse(${line})`);
             // Sent at the end of id and options in response to "uci". Init is complete.
             this.outbound.enqueue("setoption name MultiPV value 6\n");
             this.outbound.enqueue("setoption name UCI_ShowWDL value true\n");
@@ -96,7 +102,7 @@ export class ServerConnection {
             this.outbound.enqueue("isready\n");
             break;
         case "id":
-            dbg(`parseResponse(${fromServer})`);
+            dbg(`parseResponse(${line})`);
             // next word "name" or "author"; we care about "name Stockfish"
             if (words[1] == "name") {
                 if (words[2] != "Stockfish") {
@@ -106,13 +112,13 @@ export class ServerConnection {
             }
             break;
         case "option":
-            dbg(`parseResponse(${fromServer})`);
+            dbg(`parseResponse(${line})`);
             // We care about option name MultiPV type spin default 1 min 1 max 256 type:stdout])
             // And option name UCI_ShowWDL type check default false type:stdout])
             // For now that's it; in the future, Threads, Ponder, and possibly others.
             break;
         case "readyok":
-            dbg(`parseResponse(${fromServer})`);
+            dbg(`parseResponse(${line})`);
             // For now we don't need to anything if the engine says it's ready - we
             // just send commands and count on typeahead into the pipe from the server
             // to the chess CLI to hold commands until the server is ready.
@@ -139,7 +145,7 @@ export class ServerConnection {
                 // short info line like "info depth 27 currmove h2h3 currmovenumber 6" not used right now
                 break;
             }
-            dbg(`parseResponse(${fromServer})`);
+            dbg(`parseResponse(${line})`);
             for (let i = 0; i < words.length; i++) {
                 let word = words[i];
                 if (word == "multipv") {
@@ -161,8 +167,6 @@ export class ServerConnection {
             dbg("response ignored");
             break;
         }
-
-        this.setStatus(fromServer.status);
     }
 
     handleMessage(msg) {
@@ -184,7 +188,7 @@ export class ServerConnection {
             }
             break;
         case "stdout":
-            this.parseResponse(msg.data);
+            this.parseResponse(msg);
             break;
         case "stderr":
             dbg(`stderr from Stockfish: ${msg.data}`);
@@ -196,6 +200,8 @@ export class ServerConnection {
             dbg(`onmessage(${msg.type}: ${msg.data} (${msg.status})) ignored`);
             break;
         }
+
+        this.setStatus();
     }
 
     startEngine(cmd) {
@@ -241,6 +247,7 @@ export class ServerConnection {
                 break;
         }
 
+        this.setStatus();
         setTimeout(() => this.doNet(), delay);
     }
 
