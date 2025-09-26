@@ -84,11 +84,10 @@ function makeDynamicLabelTexture(text) {
 }
 
 // --- Factory function ---
-function makeCylWithLabel(color, text, vec, vis) {
-  dbg(`makeCylWithLabel(${color}, ${text}, ${vec[0]}, ${vec[1]}, ${vec[2]}`);
+function makeCylWithLabel(color, text, qrVec) {
   const group = new THREE.Group();
-  group.position.set(vec[0], vec[1], vec[2]);
-  group.visible = vis;
+  const xyzVec = utils.xyzPos(qrVec);
+  group.position.set(xyzVec[0], xyzVec[1], xyzVec[2]);
   group.name = "GROUP";
 
   // Cylinder (unique material per cylinder)
@@ -131,29 +130,14 @@ function makeCylWithLabel(color, text, vec, vis) {
 }
 
 const items = [
-    makeCylWithLabel(utils.makeHexColor(0), "0", utils.xyzPos(0, 0), true),
-    makeCylWithLabel(utils.makeHexColor(0), "1", utils.xyzPos(1, 1), true),
-    makeCylWithLabel(utils.makeHexColor(0), "2", utils.xyzPos(2, 1), true),
-    makeCylWithLabel(utils.makeHexColor(0), "3", utils.xyzPos(3, 1), true),
-    makeCylWithLabel(utils.makeHexColor(0), "4", utils.xyzPos(4, 1), true),
-    makeCylWithLabel(utils.makeHexColor(0), "5", utils.xyzPos(5, 1), true),
-    makeCylWithLabel(utils.makeHexColor(0), "6", utils.xyzPos(6, 1), true),
+    makeCylWithLabel(utils.makeHexColor(0), "Center", [0, 0]),
 
-    /* Commented out while evolve the code to generalized navigation
-    makeCylWithLabel(utils.makeHexColor(0), "1", utils.xyzPos(1, 2), false),
-    makeCylWithLabel(utils.makeHexColor(0), "2", utils.xyzPos(2, 2), false),
-    makeCylWithLabel(utils.makeHexColor(0), "3", utils.xyzPos(3, 2), false),
-    makeCylWithLabel(utils.makeHexColor(0), "4", utils.xyzPos(4, 2), false),
-    makeCylWithLabel(utils.makeHexColor(0), "5", utils.xyzPos(5, 2), false),
-    makeCylWithLabel(utils.makeHexColor(0), "6", utils.xyzPos(6, 2), false),
-
-    makeCylWithLabel(utils.makeHexColor(0), "1", utils.xyzPos(1, 3), false),
-    makeCylWithLabel(utils.makeHexColor(0), "2", utils.xyzPos(2, 3), false),
-    makeCylWithLabel(utils.makeHexColor(0), "3", utils.xyzPos(3, 3), false),
-    makeCylWithLabel(utils.makeHexColor(0), "4", utils.xyzPos(4, 3), false),
-    makeCylWithLabel(utils.makeHexColor(0), "5", utils.xyzPos(5, 3), false),
-    makeCylWithLabel(utils.makeHexColor(0), "6", utils.xyzPos(6, 3), false),
-    */
+    makeCylWithLabel(utils.makeHexColor(0), "1", [ 1, -1]),
+    makeCylWithLabel(utils.makeHexColor(0), "2", [ 1,  0]),
+    makeCylWithLabel(utils.makeHexColor(0), "3", [ 0,  1]),
+    makeCylWithLabel(utils.makeHexColor(0), "4", [-1,  1]),
+    makeCylWithLabel(utils.makeHexColor(0), "5", [-1,  0]),
+    makeCylWithLabel(utils.makeHexColor(0), "6", [ 0, -1]),
 ];
 
 function boundScale(pawnValue) {
@@ -168,25 +152,6 @@ function updateView(index, value, name, restOfLine) {
         items[index].updateLabel(name);
         items[index].cylMaterial.color.setStyle(utils.makeHexColor(value));
         items[index].targetScale = boundScale(value);
-
-        /* Removed while we build out general handling for many hexcyls.
-         * Definitions of these hexcyls are also commented out in items[].
-
-        // Now blow out to more cylinders if there is analysis to support
-        // or make previously-blown-out cylinders invisible if there isn't.
-        if (restOfLine.length < 2) {
-            items[ 6 + index].group.visible = false;
-            items[12 + index].group.visible = false;
-        } else {
-            items[ 6 + index].targetScale = items[index].targetScale;
-            items[ 6 + index].group.visible = true;
-            items[ 6 + index].updateLabel(restOfLine[0]);
-            items[12 + index].targetScale = items[index].targetScale;
-            items[12 + index].group.visible = true;
-            items[12 + index].updateLabel(restOfLine[1]);
-        }
-        */
-
     }
 }
 

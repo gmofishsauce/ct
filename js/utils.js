@@ -15,31 +15,25 @@ function dbobj(obj) {
 
 // See https://www.redblobgames.com/grids/hexagons/
 // These are axial coordinates [q, r] with s derived.
-// The order of the basisVectors is designed along with the 
-// Stockfish responses to place taller "terrain" at the
-// back right and lower terrain at the front left. We put
-// 0, 0, 0 in the basisVectors as offset [0] because Stockfish
-// index move traces from 1 to N.
 
 const basisVectors = [
     [ 0,  0], // 0, not a direction: s is 0
-    [ 1, -1], // 1: s is 0
-    [ 0, -1], // 2: s is 1
-    [ 1,  0], // 3: s is -1
-    [ 0,  1], // 4: s is -1
-    [-1,  0], // 5: s is 1
-    [-1,  1], // 6: s is 0
+    [ 1, -1], // s is 0
+    [ 1,  0], // s is -1
+    [ 0,  1], // s is -1
+    [-1,  1], // s is 0
+    [-1,  0], // s is 1
+    [ 0, -1], // s is 1
 ];
 
 const sqrt3 = Math.sqrt(3);
 const s3ov2 = sqrt3/2;
 const t3ov2 = 3./2;
 
-export function xyzPos(stockfishIndex, distance) {
-    const hex = basisVectors[stockfishIndex];
-    const x   = sqrt3*hex[0]  +  s3ov2*hex[1];
-    const z   =                  t3ov2*hex[1];
-    return [x*distance, 0, z*distance];
+export function xyzPos(qrVec) {
+    const x = (sqrt3*qrVec[0]  + s3ov2*qrVec[1]);
+    const z = (                  t3ov2*qrVec[1]);
+    return [x, 0.0, z];
 }
 
 // === Color support - an empirically derived gradent. ===
