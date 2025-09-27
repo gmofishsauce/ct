@@ -40,21 +40,49 @@ So, ah ah - An unordered sea of hexcyls with an ordered array of hexcyls
 Bottom line:
 DONE Finish basic mouse selection ("demo")
 DONE Put actual and target scales on the objects
-Move existing demo to a sea of objects with one mapping array
-Add a second Stockfish instance and make sure nothing breaks
-Change the mapping arrays to be associated with the Stockfish instances
+???? Move existing demo to a sea of objects with one mapping array
+???? Add a second Stockfish instance and make sure nothing breaks
+???? Change the mapping arrays to be associated with the Stockfish instances
 
 
 More about the model (9/23/2025):
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-I need to put {q, r} on the nameless objects returned by makeCylWithLabel().
+DONE I need to put {q, r} on the nameless objects returned by makeCylWithLabel().
 Reduce initial display to just the center cylinder.
 Add a function requireHexcyl(...) that either makes a new hexcyl at {q, r}
     or returns the existing hexcyl.
-There will be one primary server (MultiPV = 6) and N secondaries (MultiPV = 3)
-N will be a parameter with a default value, eventually a "Settings..." button
-[ side note: mouse over hexcyl => put FEN in text box "for real" ]
-[ side note: try showing just the centered node on the chessboard ]
-clicking on centered node does nothing
-single click on non-centered node starts a secondary centered on that node
-double click on non-centered node centers that node, freezing some node(s).
+???? There will be one primary server (MultiPV = 6) and N secondaries (MultiPV = 3)
+???? N will be a parameter with a default value, eventually a "Settings..." button
+???? [ side note: mouse over hexcyl => put FEN in text box "for real" ]
+???? [ side note: try showing just the centered node on the chessboard ]
+???? clicking on centered node does nothing
+???? single click on non-centered node starts a secondary centered on that node
+???? double click on non-centered node centers that node, freezing some node(s).
+
+Simplification:
+There is just one kind of click, "expand"
+It recenters the server and expands into all unused adjacent hexes, usually 3.
+All the other hexcyls become abandoned (need visual indication).
+I still need requireHexcyl() based on the exposed (q, r) coordinates as above.
+When hexcyl click:
+    clear the "active" (array of active hexcyl references)
+    stop the engine
+    iterator neighbors of selected hexcyl:
+        if doesn't exist:
+            create and add to "active"
+    reorder active so that the 1-line is northeast-most, etc.
+    start the engine with MultiPV = len(active)
+when "Go" click:
+    All of hexcyl click but ALSO clean the "ocean" (and remove all from scene)
+
+? All hexcyls (aside "Start") are created by requireHexcyl from updateView().
+? Created hexcyls are always added to both the ocean[] and active[].
+
+CORRECTION: the "ocean" will never be cleared of hexcyls, but hexcyls can
+be removed from the scene with scene.remove(). All hexcyls ever created will
+exist until program (page) termination. All hexcyls will be created by
+requireHexcyl(), which will first check the ocean[] for unused elements
+and "repurpose" them if they exist. In practice hexcyls are only removed
+from the scene when they are all removed, at which point all the hexcyls
+will be removed from the scene and serially reallocated as the scene refills.
+

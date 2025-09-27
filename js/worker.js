@@ -30,7 +30,7 @@ let baseUrl = "";
 
 // Post a debug message back to the main thread
 function dbg(msg) {
-  postMessage({type: "debug", data: msg});
+  postMessage({ type: "debug", data: msg });
 }
 
 // Post an error back to the main thread.
@@ -39,10 +39,10 @@ function error(msg) {
 }
 
 function statusString(ws) {
-  // These strings are displayed directly to users  
+  // These strings are displayed directly to users
   // The state called "closed" is better described as "down"
   const names = ["connecting", "ready", "closing", "down"];
-  return (ws) ? names[ws.readyState] : "down";
+  return ws ? names[ws.readyState] : "down";
 }
 
 // Handle a message posted to this worker's pump.
@@ -75,18 +75,28 @@ onmessage = async (e) => {
         ws.onmessage = (event) => {
           try {
             const recv = JSON.parse(event.data);
-            postMessage({type: recv.type, data: recv.data, status: statusString(ws)});
+            // forward all fields from server, adding current status
+            const out = Object.assign({}, recv, { status: statusString(ws) });
+            postMessage(out);
           } catch (err) {
             error("invalid JSON from server");
           }
         };
 
         ws.onerror = (err) => {
-          error("WebSocket error");
+          error(
+            "WebSocket error: " +
+              (err && err.message ? err.message : String(err))
+          );
         };
 
-        ws.onclose = () => {
-          error("WebSocket closed");
+        ws.onclose = (e) => {
+          error(
+            "WebSocket closed: code " +
+              (e.code || "unknown") +
+              " reason " +
+              (e.reason || "")
+          );
         };
       } catch (err) {
         dbg("open: catch ...");
@@ -101,13 +111,20 @@ onmessage = async (e) => {
         ws.send(content);
         dbg("content sent");
       } else {
-        postMessage({ type: "error", error: "not connected", status: statusString(ws) });
+        postMessage({
+          type: "error",
+          error: "not connected",
+          status: statusString(ws),
+        });
       }
       break;
 
     default:
-      postMessage({ type: "error", error: "Unknown message type", status: statusString(ws) });
+      postMessage({
+        type: "error",
+        error: "Unknown message type",
+        status: statusString(ws),
+      });
       break;
   }
 };
-
