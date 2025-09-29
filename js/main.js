@@ -57,7 +57,7 @@ const neutralScale = 1.0;
 const minScale = 0.05;
 const maxScale = 1.95;
 
-const cylGeometry = new THREE.CylinderGeometry(1, 1, neutralHeight, 6); // hexagon cross-section
+const cylGeometry = new THREE.CylinderGeometry(1, 1, neutralHeight, 6);
 const labelGeometry = new THREE.CircleGeometry(1, 64); // round disk for label
 
 function makeDynamicLabelTexture(text) {
@@ -83,14 +83,22 @@ function makeDynamicLabelTexture(text) {
   return { texture, update };
 }
 
-// --- Factory function ---
-function makeCylWithLabel(color, text, qrVec) {
+// The hexcyl (a labeled hexagonal cylinder) is the fundamental graphical
+// object in this app. Each hexcyl has a color that varies over a gradient,
+// a label, a scalable height, and a position expressed in {q, r} axial
+// hexagonal coordinates, usually packaged as a qrVec which is an array
+// of length 2. This factory function is usually reached via requireHexcylAt()
+// which participates in the management strategy for these graphical objects.
+// The strategy is described in a later comment.
+
+function makeHexcyl(qrVec, text) {
   const group = new THREE.Group();
   const xyzVec = utils.xyzPos(qrVec);
   group.position.set(xyzVec[0], xyzVec[1], xyzVec[2]);
   group.name = "GROUP";
 
   // Cylinder (unique material per cylinder)
+  const color = utils.makeHexColor(0);
   const cylMaterial = new THREE.MeshPhongMaterial({ color });
   const cylMesh = new THREE.Mesh(cylGeometry, cylMaterial);
   cylMesh.name = "CYL"; // used in PickHelper
@@ -125,20 +133,76 @@ function makeCylWithLabel(color, text, qrVec) {
     updateLabel: dynamicLabel.update,
     updateHeight, // change height
     targetScale: neutralScale,
-    actualScale: neutralScale,
+    actualScale: minScale, // cylinders initially "grow" into the scene
+    qrVec,
   };
 }
 
-const items = [
-  makeCylWithLabel(utils.makeHexColor(0), "Center", [0, 0]),
+// Hexcyl management. The center hexcyl is statically created below. The
+// user must begin by entering a starting position and clicking Go. Six
+// hexcyls are allocated, added to the hexcyls map and placed in activeKeys
+// in the correct ordering to ensure the terrain ramps up toward the back
+// right (northeast). Each time the Go button is pressed all hexcyls are
+// removed from the scene and from activeKeys but not from the hexcyls map.
+// Now requireHexcylAt() will rediscover the hexcyls and will not recreate
+// them; they will be added to activeKeys and the scene. When the user clicks
+// a hexcyl to expand it, activeKeys is cleared but of course the scene is
+// not. The clicked hexcyl becomes the logical center. The click handler
+// iterates its neighbors, creating or reclaiming hexcyls to surround the
+// logical center. Previously-invisible hexcyls become the new active set.
+//
+// So hexcyls have three possible states: (1) active and visible in the
+// scene, (2) inactive (frozen) and visible because the center has moved
+// away from them, (3) not visible in the scene, eligible for reclaiming,
+// and not active. State transitions are creation => (1), (1) => (3) and
+// (2) => (3) when Go button pressed and all hexcyls are removed from the
+// scene, (1) => (2) when an active hexcyl is clicked and the center moves,
+// and (3) => (1) when a hexcyl not in the scene is reclaimed.
 
-  makeCylWithLabel(utils.makeHexColor(0), "1", [1, -1]),
-  makeCylWithLabel(utils.makeHexColor(0), "2", [1, 0]),
-  makeCylWithLabel(utils.makeHexColor(0), "3", [0, 1]),
-  makeCylWithLabel(utils.makeHexColor(0), "4", [-1, 1]),
-  makeCylWithLabel(utils.makeHexColor(0), "5", [-1, 0]),
-  makeCylWithLabel(utils.makeHexColor(0), "6", [0, -1]),
-];
+const hexcyls = new Map(); // "q-r" => hexcyl obj
+let activeKeys = []; // ordered (sub)set of animated hexcyls
+
+function keyFor(qrVec) {
+  return `${qrVec[0]}-${qrVec[1]}`;
+}
+
+function hexcylExists(qrVec) {
+  return hexcyls.has(keyFor(qrVec));
+}
+
+// TODO northeast-priority ordering
+function makeActive(hexcyl) {
+  activeKeys.push(hexcyl);
+  updateView(activeKeys.length-1, 0.0, keyFor(center.qrVec));
+}
+
+function requireHexcylAt(qrVec) {
+  const k = keyFor(qrVec);
+
+  if (hexcyls.has(k)) {
+    const result = hexcyls.get(k);
+    if (result.parent == null) {
+      // state (3) => (1)
+      scene.add(result);
+      makeActive(result);
+    } else {
+      // state (1) => (2)
+      // Click handler should have cleared activeKeys
+      // So: nothing to do here for now, but:
+      // TODO visual indication of "frozen" state
+    }
+    return result;
+  }
+
+  // creation => state(1)
+  hexcyl = makeHexcyl(qrVec, k);
+  hexcyls.set(k, hexcyl);
+  scene.add(hexcyl);
+  makeActive(hexcyl);
+  return hexcyl;
+}
+
+let center = requireHexcylAt([0, 0], "Center");
 
 function boundScale(pawnValue) {
   let result = neutralScale + pawnValue / 2.0;
@@ -147,11 +211,11 @@ function boundScale(pawnValue) {
   return result;
 }
 
-function updateView(index, value, name, restOfLine) {
-  if (index > 0 && index < items.length) {
-    items[index].updateLabel(name);
-    items[index].cylMaterial.color.setStyle(utils.makeHexColor(value));
-    items[index].targetScale = boundScale(value);
+function updateView(index, value, name) {
+  if (index > 0 && index < activeKeys.length) {
+    activeKeys[index].updateLabel(name);
+    activeKeys[index].cylMaterial.color.setStyle(utils.makeHexColor(value));
+    activeKeys[index].targetScale = boundScale(value);
   }
 }
 
@@ -210,17 +274,48 @@ document.getElementById("c").addEventListener("keydown", (e) => {
 const goButton = document.getElementById("go");
 const actionText = document.getElementById("action");
 
+// TODO:
+// When user clicks:
+//   clear active set
+//   iterate [qrVec] neighbors:
+//      if not exist(neighborQR):
+//        create it; add it to activeKeys
+// So only the click handler ever calls requireHexcylAt().
+// Really "click handlerS" for canvas and for Go button.
+// And requireHexcylAt() can just default the color and text.
+// Maintaining the text to avoid rewriting the label texture
+//   is a nice optimization but just an optimization.
+
+// "Hard" restart. Empty the terrain and the active set. Remove
+// all hexcyls from the scene ((1) => (3) and (2) => (3) transitions;
+// see the long comment about hexcyl states). Send the chess engine
+// a stop and a ucinewgame so it dumps its transposition table.
 goButton.addEventListener("click", function () {
   const s = actionText.value;
   dbg(`go: ${s}`);
+
+  let cmd = null;
   if (s && s.length > 0) {
     // is a FEN with optional "moves ..." at the end?
     const fields = s.split(" ");
     if (fields.length >= 6 && fields[0].includes("/")) {
-      primaryServer.startEngine("fen " + s);
+      cmd = "fen " + s;
     } else if (s.startsWith("startpos")) {
-      primaryServer.startEngine(s);
+      cmd = s;
     }
+  }
+
+  if (cmd == null) {
+    // TODO set the background color or something instead of this rude behavior
+    actionText.value = ""
+  } else {
+    activeKeys = [];
+    for (const [k, v] of hexcyls) {
+      scene.remove(v);
+    }
+    // TODO recenter on {0, 0}
+    requireHexcylAt(center);
+    primaryServer.startEngine(cmd);
   }
 });
 

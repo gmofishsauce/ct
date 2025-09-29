@@ -129,7 +129,6 @@ export class ServerConnection {
             let value = 0.0;
             let name = "?";
             let nameIndex = words.length;
-            let restOfLine = [];
 
             // An info line from Stockfish can look like this, with just one move on the preferred variation (pv):
             // info depth 3 seldepth 4 multipv 1 score cp 38 nodes 347 nps 347000 hashfull 0 tbhits 0 time 1 pv c2c4
@@ -138,7 +137,7 @@ export class ServerConnection {
             // Later in analysis, an info line can end like this:
             // [ ... ] time 11 pv e2e4 c7c5 g1f3 b8c6 b1c3 e7e6 d2d4 c5d4 f3d4 g8f6 d4b5 d7d5 e4d5 e6d5
             // There are now many more moves on the preferred variation starting with ("named") e2e4.
-            // These additional moves, if any, are passed to the display update function in restOfLine.
+            // These moves never come with evaluations, so they are useless to us.
             // Note: the "cp" field stands for "centipawns", the position evaluation in hundreths of a pawn.
 
             if (words.length < 8) {
@@ -157,10 +156,7 @@ export class ServerConnection {
                     name = words[nameIndex];
                 }
             }
-            if (words.length > 1+nameIndex) {
-                restOfLine = words.slice(1+nameIndex);   
-            }
-            this.updater(index, value, name, restOfLine);
+            this.updater(index, value, name);
             break;
         }
         default:
