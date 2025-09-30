@@ -11,7 +11,6 @@ const canvas = document.querySelector("#c");
 const renderer = new THREE.WebGLRenderer({ antialias: true, canvas });
 const scene = new THREE.Scene();
 
-// The server for the centered hexcyl - sets MultiPV to 6.
 let primaryServer = null;
 
 function lights() {
@@ -173,7 +172,7 @@ function hexcylExists(qrVec) {
 // TODO northeast-priority ordering
 function makeActive(hexcyl) {
   activeKeys.push(hexcyl);
-  updateView(activeKeys.length-1, 0.0, keyFor(center.qrVec));
+  updateView(activeKeys.length-1, 0.0, keyFor(hexcyl.qrVec));
 }
 
 function requireHexcylAt(qrVec) {
@@ -183,23 +182,26 @@ function requireHexcylAt(qrVec) {
     const result = hexcyls.get(k);
     if (result.parent == null) {
       // state (3) => (1)
-      scene.add(result);
+      scene.add(result.group);
       makeActive(result);
+      dbg(`STATE ${keyFor(result.qrVec)} (3)=>(1)`);
     } else {
       // state (1) => (2)
       // Click handler should have cleared activeKeys
       // So: nothing to do here for now, but:
       // TODO visual indication of "frozen" state
+      dbg(`STATE ${keyFor(result.qrVec)} (1)=>(2)`);
     }
     return result;
   }
 
   // creation => state(1)
-  hexcyl = makeHexcyl(qrVec, k);
-  hexcyls.set(k, hexcyl);
-  scene.add(hexcyl);
-  makeActive(hexcyl);
-  return hexcyl;
+  const result = makeHexcyl(qrVec, k);
+  dbg(`STATE ${keyFor(result.qrVec)} creation=>(1)`);
+  hexcyls.set(k, result);
+  scene.add(result.group);
+  makeActive(result);
+  return result;
 }
 
 let center = requireHexcylAt([0, 0], "Center");
@@ -221,7 +223,6 @@ function updateView(index, value, name) {
 
 function main() {
   lights();
-  items.forEach((item) => scene.add(item.group));
 
   // OK, Action!
 
@@ -238,20 +239,20 @@ function main() {
 
   function render(time) {
     // Every frame converges the bars on the targets by small steps
-    items.forEach((item, ndx) => {
-      let diff = item.targetScale - item.actualScale;
+    activeKeys.forEach((hexcyl) => {
+      let diff = hexcyl.targetScale - hexcyl.actualScale;
       if (Math.abs(diff) > 0.011) {
         if (diff > 0) {
-          item.actualScale += 0.01;
+          hexcyl.actualScale += 0.01;
         } else {
-          item.actualScale -= 0.01;
+          hexcyl.actualScale -= 0.01;
         }
-        item.updateHeight(item.actualScale);
+        hexcyl.updateHeight(hexcyl.actualScale);
       }
       // TODO there's no need for this unless the camera position
       // has changed. Can we efficiently detect changes in the
       // camera position?
-      item.labelMesh.lookAt(cam.position);
+      hexcyl.labelMesh.lookAt(cam.position);
     });
 
     if (resizeRendererToDisplaySize(renderer)) {
@@ -274,18 +275,6 @@ document.getElementById("c").addEventListener("keydown", (e) => {
 const goButton = document.getElementById("go");
 const actionText = document.getElementById("action");
 
-// TODO:
-// When user clicks:
-//   clear active set
-//   iterate [qrVec] neighbors:
-//      if not exist(neighborQR):
-//        create it; add it to activeKeys
-// So only the click handler ever calls requireHexcylAt().
-// Really "click handlerS" for canvas and for Go button.
-// And requireHexcylAt() can just default the color and text.
-// Maintaining the text to avoid rewriting the label texture
-//   is a nice optimization but just an optimization.
-
 // "Hard" restart. Empty the terrain and the active set. Remove
 // all hexcyls from the scene ((1) => (3) and (2) => (3) transitions;
 // see the long comment about hexcyl states). Send the chess engine
@@ -306,15 +295,18 @@ goButton.addEventListener("click", function () {
   }
 
   if (cmd == null) {
+    // "Garbage" in the action text box.
     // TODO set the background color or something instead of this rude behavior
     actionText.value = ""
   } else {
+    // All hexcyls transition to state (3),
+    // not visible but reclaimable.
     activeKeys = [];
     for (const [k, v] of hexcyls) {
-      scene.remove(v);
+      dbg(`STATE ${k} (1),(2)=>(3)`);
+      scene.remove(v.group);
     }
-    // TODO recenter on {0, 0}
-    requireHexcylAt(center);
+    center = requireHexcylAt([0, 0], "Center");
     primaryServer.startEngine(cmd);
   }
 });
@@ -328,6 +320,18 @@ function getCanvasRelativePosition(event) {
     y: ((event.clientY - rect.top) * canvas.height) / rect.height,
   };
 }
+
+// TODO:
+// When user clicks:
+//   clear active set
+//   iterate [qrVec] neighbors:
+//      if not exist(neighborQR):
+//        create it; add it to activeKeys
+// So only the click handler ever calls requireHexcylAt().
+// Really "click handlerS" for canvas and for Go button.
+// And requireHexcylAt() can just default the color and text.
+// Maintaining the text to avoid rewriting the label texture
+//   is a nice optimization but just an optimization.
 
 document.getElementById("c").addEventListener("click", (e) => {
   dbg(`click ${e.clientX} ${e.clientY}`);
