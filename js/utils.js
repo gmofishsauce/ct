@@ -13,19 +13,6 @@ function dbobj(obj) {
 
 // === Position translation support ===
 
-// See https://www.redblobgames.com/grids/hexagons/
-// These are axial coordinates [q, r] with s derived.
-
-const basisVectors = [
-  [0, 0], // 0, not a direction: s is 0
-  [1, -1], // s is 0
-  [1, 0], // s is -1
-  [0, 1], // s is -1
-  [-1, 1], // s is 0
-  [-1, 0], // s is 1
-  [0, -1], // s is 1
-];
-
 const sqrt3 = Math.sqrt(3);
 const s3ov2 = sqrt3 / 2;
 const t3ov2 = 3 / 2;

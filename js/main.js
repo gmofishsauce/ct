@@ -7,6 +7,26 @@ function dbg(msg) {
   console.log(msg);
 }
 
+function dbobj(obj) {
+  dbg(`=== Properties of ${obj}: ===`);
+  for (let prop in obj) {
+    console.log(`  ${prop}: ${obj[prop]}`);
+  }
+}
+
+// See https://www.redblobgames.com/grids/hexagons/
+// These are axial coordinates [q, r] with s derived.
+
+const basisVectors = [
+  [0, 0], // 0, not a direction: s is 0
+  [1, -1], // s is 0
+  [1, 0], // s is -1
+  [0, 1], // s is -1
+  [-1, 1], // s is 0
+  [-1, 0], // s is 1
+  [0, -1], // s is 1
+];
+
 const canvas = document.querySelector("#c");
 const renderer = new THREE.WebGLRenderer({ antialias: true, canvas });
 const scene = new THREE.Scene();
@@ -137,8 +157,8 @@ function makeHexcyl(qrVec, text) {
   };
 }
 
-// Hexcyl management. The center hexcyl is statically created below. The
-// user must begin by entering a starting position and clicking Go. Six
+// Hexcyl management. The user must begin by entering a starting position
+// and clicking Go. The center hexcyl is created if it doesn't exist. Six
 // hexcyls are allocated, added to the hexcyls map and placed in activeKeys
 // in the correct ordering to ensure the terrain ramps up toward the back
 // right (northeast). Each time the Go button is pressed all hexcyls are
@@ -204,8 +224,6 @@ function requireHexcylAt(qrVec) {
   return result;
 }
 
-let center = requireHexcylAt([0, 0], "Center");
-
 function boundScale(pawnValue) {
   let result = neutralScale + pawnValue / 2.0;
   if (result < minScale) result = minScale;
@@ -214,11 +232,24 @@ function boundScale(pawnValue) {
 }
 
 function updateView(index, value, name) {
-  if (index > 0 && index < activeKeys.length) {
-    activeKeys[index].updateLabel(name);
-    activeKeys[index].cylMaterial.color.setStyle(utils.makeHexColor(value));
-    activeKeys[index].targetScale = boundScale(value);
+  if (index < 0 || index >= basisVectors.length) {
+    // sanity check - should not happen
+    console.log(`updateView(): invalid index ${index}`);
+    return;
   }
+  const center = activeKeys[0];
+  if (center == null) {
+    // sanity check - should not happen
+    console.log(`updateView(): no center`);
+    return;
+  }
+
+  // TODO northeast-is-higher bias
+  const bv = basisVectors[index];
+  const hex = requireHexcylAt([center.qrVec[0]+bv[0], center.qrVec[1]+bv[1]]);
+  hex.updateLabel(name);
+  hex.cylMaterial.color.setStyle(utils.makeHexColor(value));
+  hex.targetScale = boundScale(value);
 }
 
 function main() {
@@ -306,7 +337,7 @@ goButton.addEventListener("click", function () {
       dbg(`STATE ${k} (1),(2)=>(3)`);
       scene.remove(v.group);
     }
-    center = requireHexcylAt([0, 0], "Center");
+    requireHexcylAt([0, 0]);
     primaryServer.startEngine(cmd);
   }
 });
