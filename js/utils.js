@@ -112,5 +112,16 @@ export class PickHelper {
         break;
       }
     }
+
+    // Return the picked object
+    if (picked == null) {
+      return null;
+    }
+    if (picked.name == "CYL" && picked.parent && picked.parent.name == "GROUP") {
+      return picked.parent.owner;
+    } else {
+      dbg("unexpected non-null picked object:");
+      dbobj(picked);
+    }
   }
 }

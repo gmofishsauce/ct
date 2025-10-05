@@ -144,7 +144,14 @@ function makeHexcyl(qrVec, text) {
   }
 
   // Return group plus handles for updates
-  return {
+  // XXX FIXME this design is ridiculous. It was proposed by an AI as a
+  // graphics example, and one thing led to another. All these properties
+  // should be on the Three.js group object and this nameless return type
+  // should not even exist. N.B. - the PickHelper in utils.js identifies
+  // the group when it's clicked, and the .owner is required to get back
+  // to the qrVec of the selected group. Bogus. Hopefully I can get an AI
+  // to refactor the entire code base to get rid of this thing.
+  const result = {
     group, // add to scene
     cylMesh, // access mesh
     cylMaterial, // change color
@@ -155,6 +162,8 @@ function makeHexcyl(qrVec, text) {
     actualScale: minScale, // cylinders initially "grow" into the scene
     qrVec,
   };
+  group.owner = result;
+  return result;
 }
 
 // Hexcyl management. The user must begin by entering a starting position
@@ -211,7 +220,6 @@ function requireHexcylAt(qrVec) {
     } else {
       // state (1) => (2)
       // Click handler should have cleared activeKeys
-      // So: nothing to do here for now, but:
       // TODO visual indication of "frozen" state
       dbg(`STATE ${keyFor(result.qrVec)} (1)=>(2)`);
     }
@@ -374,7 +382,11 @@ document.getElementById("c").addEventListener("click", (e) => {
   const pos = getCanvasRelativePosition(e);
   const x = (pos.x / canvas.width) * 2 - 1;
   const y = (pos.y / canvas.height) * -2 + 1; // note we flip Y
-  pickHelper.pick(x, y, scene, cam);
+  const picked = pickHelper.pick(x, y, scene, cam);
+  if (picked != null) {
+    activeKeys = [];
+    activeKeys.push(picked);
+  }
 });
 
 // Finally, start me up.
