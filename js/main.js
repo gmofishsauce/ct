@@ -200,6 +200,9 @@ function requireHexcylAt(qrVec) {
 
   if (hexcyls.has(k)) {
     const result = hexcyls.get(k);
+    if (activeKeys.includes(result)) {
+      return result;
+    }
     if (result.parent == null) {
       // state (3) => (1)
       scene.add(result.group);
@@ -232,11 +235,13 @@ function boundScale(pawnValue) {
 }
 
 function updateView(index, value, name) {
+  // dbg(`updateView(${index}, ${value}, ${name})`);
   if (index < 0 || index >= basisVectors.length) {
     // sanity check - should not happen
     console.log(`updateView(): invalid index ${index}`);
     return;
   }
+
   const center = activeKeys[0];
   if (center == null) {
     // sanity check - should not happen
@@ -326,9 +331,9 @@ goButton.addEventListener("click", function () {
   }
 
   if (cmd == null) {
-    // "Garbage" in the action text box.
+    // "Garbage" (e.g. a bad FEN string) in the action text box.
     // TODO set the background color or something instead of this rude behavior
-    actionText.value = ""
+    actionText.value = "" // poof!
   } else {
     // All hexcyls transition to state (3),
     // not visible but reclaimable.
