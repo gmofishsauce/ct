@@ -209,6 +209,19 @@ export class ServerConnection {
         this.outbound.enqueue("go infinite\n");
     }
 
+    stop() {
+        this.outbound.enqueue("stop\n");
+        this.outbound.enqueue("isready\n");
+    }
+
+    // TODO for a major efficiency optimization, reduce
+    // MultiPV to something that matches that actual number
+    // of threads, rather than leaving it at 6.
+    move(cmd) {
+        this.outbound.enqueue("position " + cmd + "\n");
+        this.outbound.enqueue("go infinite\n");
+    }
+
     doNet() {
         dbg("doNet()");
         let delay = 537;

@@ -160,6 +160,8 @@ function makeHexcyl(qrVec, text) {
     updateHeight, // change height
     targetScale: neutralScale,
     actualScale: minScale, // cylinders initially "grow" into the scene
+    frozen: false,
+    label: text,
     qrVec,
   };
   group.owner = result;
@@ -194,8 +196,22 @@ function keyFor(qrVec) {
   return `${qrVec[0]}-${qrVec[1]}`;
 }
 
-function hexcylExists(qrVec) {
-  return hexcyls.has(keyFor(qrVec));
+// Called when the terrain is expanded by clicking on a hexcyl.
+// Freezes all the hexcyls in the terrain. Only newly-added ones
+// are active (not frozen).
+function freezeAll() {
+  hexcyls.forEach((hexcyl) => {
+    hexcyl.frozen = true;
+  });
+}
+
+// Called when the Go button is clicked on a new FEN string and
+// the scene is cleared. Ensures that hexcyls reclaimed from the
+// hexcyls map will not be frozen when reclaimed.
+function unfreezeAll() {
+  hexcyls.forEach((hexcyl) => {
+    hexcyl.frozen = false;
+  });
 }
 
 // TODO northeast-priority ordering
@@ -243,10 +259,13 @@ function boundScale(pawnValue) {
 }
 
 function updateView(index, value, name) {
-  // dbg(`updateView(${index}, ${value}, ${name})`);
   if (index < 0 || index >= basisVectors.length) {
-    // sanity check - should not happen
-    console.log(`updateView(): invalid index ${index}`);
+    // This happens all the time, for now, because we always let the engine
+    // evaluate six threads and only use the top three threads after the
+    // user starts clicking hexes to expand the terrain. All six threads
+    // are only used for the six best moves after the Go button is clicked.
+    // TODO optimize by sending a smaller MultiPV to the server in the click
+    // handler for terrain clicks. This would be a new comms call argument.
     return;
   }
 
@@ -260,9 +279,12 @@ function updateView(index, value, name) {
   // TODO northeast-is-higher bias
   const bv = basisVectors[index];
   const hex = requireHexcylAt([center.qrVec[0]+bv[0], center.qrVec[1]+bv[1]]);
-  hex.updateLabel(name);
-  hex.cylMaterial.color.setStyle(utils.makeHexColor(value));
-  hex.targetScale = boundScale(value);
+  if (!hex.frozen) {
+    hex.label = name; // XXX TODO FIXME another sign of screwed-up object structure
+    hex.updateLabel(name);
+    hex.cylMaterial.color.setStyle(utils.makeHexColor(value));
+    hex.targetScale = boundScale(value);
+  }
 }
 
 function main() {
@@ -318,31 +340,33 @@ document.getElementById("c").addEventListener("keydown", (e) => {
 
 const goButton = document.getElementById("go");
 const actionText = document.getElementById("action");
+let currentFenWithMoves = "";
 
 // "Hard" restart. Empty the terrain and the active set. Remove
 // all hexcyls from the scene ((1) => (3) and (2) => (3) transitions;
 // see the long comment about hexcyl states). Send the chess engine
 // a stop and a ucinewgame so it dumps its transposition table.
+// Note: the string hacking is all temporary. In time we will integrate
+// a little chessboard and clean this all up.
 goButton.addEventListener("click", function () {
-  const s = actionText.value;
-  dbg(`go: ${s}`);
+  currentFenWithMoves = actionText.value;
+  dbg(`go: ${currentFenWithMoves}`);
 
-  let cmd = null;
-  if (s && s.length > 0) {
+  if (currentFenWithMoves.length > 0) {
     // is a FEN with optional "moves ..." at the end?
-    const fields = s.split(" ");
+    // if so, we need to add the string "fen" for UCI.
+    const fields = currentFenWithMoves.split(" ");
     if (fields.length >= 6 && fields[0].includes("/")) {
-      cmd = "fen " + s;
-    } else if (s.startsWith("startpos")) {
-      cmd = s;
+      currentFenWithMoves = "fen " + currentFenWithMoves;
+    } else if (!currentFenWithMoves.startsWith("startpos")) {
+      // Otherwise, if it doesn't start with "startpos",
+      // it's garbage, so clear it.
+      currentFenWithMoves = "";
+      alert("?"); // With love, ed.
     }
   }
 
-  if (cmd == null) {
-    // "Garbage" (e.g. a bad FEN string) in the action text box.
-    // TODO set the background color or something instead of this rude behavior
-    actionText.value = "" // poof!
-  } else {
+  if (currentFenWithMoves.length > 0) {
     // All hexcyls transition to state (3),
     // not visible but reclaimable.
     activeKeys = [];
@@ -350,8 +374,9 @@ goButton.addEventListener("click", function () {
       dbg(`STATE ${k} (1),(2)=>(3)`);
       scene.remove(v.group);
     }
+    unfreezeAll();
     requireHexcylAt([0, 0]);
-    primaryServer.startEngine(cmd);
+    primaryServer.startEngine(currentFenWithMoves);
   }
 });
 
@@ -365,28 +390,44 @@ function getCanvasRelativePosition(event) {
   };
 }
 
-// TODO:
-// When user clicks:
-//   clear active set
-//   iterate [qrVec] neighbors:
-//      if not exist(neighborQR):
-//        create it; add it to activeKeys
-// So only the click handler ever calls requireHexcylAt().
-// Really "click handlerS" for canvas and for Go button.
-// And requireHexcylAt() can just default the color and text.
-// Maintaining the text to avoid rewriting the label texture
-//   is a nice optimization but just an optimization.
-
 document.getElementById("c").addEventListener("click", (e) => {
+  // PickHelper.pick() returns the type-nameless hexcyl object.
   dbg(`click ${e.clientX} ${e.clientY}`);
   const pos = getCanvasRelativePosition(e);
   const x = (pos.x / canvas.width) * 2 - 1;
   const y = (pos.y / canvas.height) * -2 + 1; // note we flip Y
   const picked = pickHelper.pick(x, y, scene, cam);
-  if (picked != null) {
-    activeKeys = [];
-    activeKeys.push(picked);
+  // Clicking the center object doesn't do anything.
+  if (picked == null || picked == activeKeys[0]) {
+    return;
   }
+
+  // OK, the user clicked on live hexcyl to expand from that point.
+  primaryServer.stop();
+  activeKeys = [];
+  freezeAll();
+  activeKeys.push(picked); // new center
+
+  // Now add in the new hexcyls that will expand the terrain
+  // These will be the only unfrozen hexcyls in the entire terrain.
+  basisVectors.forEach((basisVec) => {
+    let qr = [ picked.qrVec[0]+basisVec[0], picked.qrVec[1]+basisVec[1] ];
+    let key = keyFor(qr);
+    if (!hexcyls.has(key)) {
+      requireHexcylAt(qr);
+    }
+  });
+
+  // Now do a soft start on the chess server with the new position.
+  // A soft start means the server can keep its transposition table
+  // which speeds up analysis of the new position. Note: we need to
+  // check if the current FEN string already contains the "moves..."
+  // keyword after "fen <FEN>" or "startpos".
+  if (!currentFenWithMoves.includes(" moves")) {
+    currentFenWithMoves += " moves";
+  }
+  currentFenWithMoves += " " + picked.label;
+  primaryServer.move(currentFenWithMoves);
 });
 
 // Finally, start me up.
