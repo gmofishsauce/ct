@@ -3,17 +3,6 @@ import * as utils from "./utils.js";
 import * as comms from "./comms.js";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 
-function dbg(msg) {
-  console.log(msg);
-}
-
-function dbobj(obj) {
-  dbg(`=== Properties of ${obj}: ===`);
-  for (let prop in obj) {
-    console.log(`  ${prop}: ${obj[prop]}`);
-  }
-}
-
 // See https://www.redblobgames.com/grids/hexagons/
 // These are axial coordinates [q, r] with s derived.
 
@@ -232,19 +221,19 @@ function requireHexcylAt(qrVec) {
       // state (3) => (1)
       scene.add(result.group);
       makeActive(result);
-      dbg(`STATE ${keyFor(result.qrVec)} (3)=>(1)`);
+      utils.dbg(`STATE ${keyFor(result.qrVec)} (3)=>(1)`);
     } else {
       // state (1) => (2)
       // Click handler should have cleared activeKeys
       // TODO visual indication of "frozen" state
-      dbg(`STATE ${keyFor(result.qrVec)} (1)=>(2)`);
+      utils.dbg(`STATE ${keyFor(result.qrVec)} (1)=>(2)`);
     }
     return result;
   }
 
   // creation => state(1)
   const result = makeHexcyl(qrVec, k);
-  dbg(`STATE ${keyFor(result.qrVec)} creation=>(1)`);
+  utils.dbg(`STATE ${keyFor(result.qrVec)} creation=>(1)`);
   hexcyls.set(k, result);
   scene.add(result.group);
   makeActive(result);
@@ -259,27 +248,19 @@ function boundScale(pawnValue) {
 }
 
 function updateView(index, value, name) {
-  if (index < 0 || index >= basisVectors.length) {
+  if (index < 0 || index >= activeKeys.length) {
     // This happens all the time, for now, because we always let the engine
     // evaluate six threads and only use the top three threads after the
     // user starts clicking hexes to expand the terrain. All six threads
     // are only used for the six best moves after the Go button is clicked.
     // TODO optimize by sending a smaller MultiPV to the server in the click
     // handler for terrain clicks. This would be a new comms call argument.
+    dbg(`updateView(${index}, ${value}, ${name}): activeKeys.length is ${activeKeys.length}`);
     return;
   }
 
-  const center = activeKeys[0];
-  if (center == null) {
-    // sanity check - should not happen
-    console.log(`updateView(): no center`);
-    return;
-  }
-
-  // TODO northeast-is-higher bias
-  const bv = basisVectors[index];
-  const hex = requireHexcylAt([center.qrVec[0]+bv[0], center.qrVec[1]+bv[1]]);
-  if (!hex.frozen) {
+  const hex = activeKeys[index];
+  if (hex && !hex.frozen) {
     hex.label = name; // XXX TODO FIXME another sign of screwed-up object structure
     hex.updateLabel(name);
     hex.cylMaterial.color.setStyle(utils.makeHexColor(value));
@@ -335,7 +316,7 @@ function main() {
 }
 
 document.getElementById("c").addEventListener("keydown", (e) => {
-  dbg("key: " + e.keyCode); // TODO
+  utils.dbg("key: " + e.keyCode); // TODO
 });
 
 const goButton = document.getElementById("go");
@@ -350,7 +331,7 @@ let currentFenWithMoves = "";
 // a little chessboard and clean this all up.
 goButton.addEventListener("click", function () {
   currentFenWithMoves = actionText.value;
-  dbg(`go: ${currentFenWithMoves}`);
+  utils.dbg(`go: ${currentFenWithMoves}`);
 
   if (currentFenWithMoves.length > 0) {
     // is a FEN with optional "moves ..." at the end?
@@ -371,11 +352,13 @@ goButton.addEventListener("click", function () {
     // not visible but reclaimable.
     activeKeys = [];
     for (const [k, v] of hexcyls) {
-      dbg(`STATE ${k} (1),(2)=>(3)`);
+      utils.dbg(`STATE ${k} (1),(2)=>(3)`);
       scene.remove(v.group);
     }
     unfreezeAll();
-    requireHexcylAt([0, 0]);
+    basisVectors.forEach((qrVec) => {
+      requireHexcylAt(qrVec);
+    });
     primaryServer.startEngine(currentFenWithMoves);
   }
 });
@@ -392,7 +375,7 @@ function getCanvasRelativePosition(event) {
 
 document.getElementById("c").addEventListener("click", (e) => {
   // PickHelper.pick() returns the type-nameless hexcyl object.
-  dbg(`click ${e.clientX} ${e.clientY}`);
+  utils.dbg(`click ${e.clientX} ${e.clientY}`);
   const pos = getCanvasRelativePosition(e);
   const x = (pos.x / canvas.width) * 2 - 1;
   const y = (pos.y / canvas.height) * -2 + 1; // note we flip Y

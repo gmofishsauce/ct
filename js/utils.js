@@ -1,13 +1,17 @@
 import * as THREE from "three";
 
-function dbg(msg) {
+export function dbg(msg) {
   console.log(msg);
 }
 
-function dbobj(obj) {
-  dbg(`=== Properties of ${obj}: ===`);
-  for (let prop in obj) {
+export function dbobj(obj) {
+  dbg(`=== Properties of ${obj && obj.constructor ? obj.constructor.name : typeof obj}: ===`);
+  try {
+    console.log(JSON.stringify(obj, Object.keys(obj || {}), 2));
+  } catch (err) { // not serializable
+    for (let prop in obj) {
     console.log(`  ${prop}: ${obj[prop]}`);
+    }
   }
 }
 
