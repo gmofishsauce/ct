@@ -255,7 +255,7 @@ function updateView(index, value, name) {
     // are only used for the six best moves after the Go button is clicked.
     // TODO optimize by sending a smaller MultiPV to the server in the click
     // handler for terrain clicks. This would be a new comms call argument.
-    dbg(`updateView(${index}, ${value}, ${name}): activeKeys.length is ${activeKeys.length}`);
+    utils.dbg(`updateView(${index}, ${value}, ${name}): activeKeys.length is ${activeKeys.length}`);
     return;
   }
 

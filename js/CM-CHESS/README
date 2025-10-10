@@ -1,0 +1,8 @@
+This is a small demo of using the cm-chessboard and chess.js libraries.
+It gets the imports right, the styles right (I think - should review),
+the HTML right, and the code right (needs to handle exceptions in the
+case that the board library thinks a move is legal but the chess library
+doesn't, e.g. checks).
+
+To run this, move ../index.html and ../main.js out of the way and run
+these instead. Must install cm-chessboard and chess.js using npx first.
