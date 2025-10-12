@@ -8,16 +8,15 @@
     <link rel="stylesheet" href="./assets/chessboard.css">
     <link rel="stylesheet" href="./assets/extensions/markers/markers.css"/>
     <style>
-    #board {
-      width: 300px;
-    }
     html, body {
       margin: 0;
       height: 100%;
+      display: flex;
+      flex-direction: column;
       font-family: Arial, Helvetica, sans-serif;
     }
     #tools {
-      position: fixed;
+      /* position: fixed; */
       top: 0; /* Positions the bar at the very top of the viewport */
       left: 0; /* Aligns the bar to the left edge of the viewport */
       width: 100%; /* Makes the bar span the full width of the viewport */
@@ -26,20 +25,30 @@
       padding: 10px; /* Example padding */
       z-index: 1000; /* Ensures the bar appears above other content */
     }
+    #container {
+      position: relative; /* needed for overlay positioning */
+      flex: 1;            /* take up remaining space between toolbar and status bar */
+    }
+    #board {
+      position: absolute;
+      top: 10px;
+      left: 10px;
+      width: 260px;
+    }
     #c {
       width: 100%;
-      /* height: 100%; */
+      height: 100%;
       display: block;
     }
     #status {
       position: fixed;
-      bottom: 0; /* Positions the bar at the very top of the viewport */
-      left: 0; /* Aligns the bar to the left edge of the viewport */
-      width: 100%; /* Makes the bar span the full width of the viewport */
-      background-color: #333; /* Example background color */
-      color: white; /* Example text color */
-      padding: 10px; /* Example padding */
-      z-index: 1000; /* Ensures the bar appears above other content */
+      bottom: 0;
+      left: 0;
+      width: 100%;
+      background-color: #333;
+      color: white;
+      padding: 10px;
+      z-index: 1000;
     }
     #msgtext {
       font-family: Arial, Helvetica, sans-serif;
@@ -57,8 +66,10 @@
       <input id="action" type="text" required size="80" />
       <button id="go">Go</button>
     </div>
-    <div id="board"></div>
-    <canvas tabindex=0 id="c"></canvas>
+    <div id="container">
+      <canvas tabindex=0 id="c"></canvas>
+      <div id="board"></div>
+    </div>
     <div id="status">
       <!-- matches javascript "down" status message -->
       <span id="msgtext">server status: down</span>
