@@ -2,6 +2,7 @@ import * as THREE from "three";
 import * as utils from "./utils.js";
 import * as comms from "./comms.js";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
+import * as board from "./board.js";
 
 // See https://www.redblobgames.com/grids/hexagons/
 // These are axial coordinates [q, r] with s derived.
@@ -415,6 +416,7 @@ document.getElementById("c").addEventListener("click", (e) => {
 
 // Finally, start me up.
 
+board.start();
 primaryServer = new comms.ServerConnection(updateView);
 primaryServer.start();
 main();
