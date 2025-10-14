@@ -123,9 +123,9 @@ export class PickHelper {
     }
     if (picked.name == "CYL" && picked.parent && picked.parent.name == "GROUP") {
       return picked.parent.owner;
-    } else {
-      dbg("unexpected non-null picked object:");
-      dbobj(picked);
     }
+    dbg("unexpected non-null picked object:");
+    dbobj(picked);
+    return null;
   }
 }

@@ -69,6 +69,8 @@ const maxScale = 1.95;
 const cylGeometry = new THREE.CylinderGeometry(1, 1, neutralHeight, 6);
 const labelGeometry = new THREE.CircleGeometry(1, 64); // round disk for label
 
+// TODO indicate color {black, white} of each move. Currently best
+// idea is to color the move text black or white.
 function makeDynamicLabelTexture(text) {
   const size = 256;
   const canvas = document.createElement("canvas");
@@ -249,14 +251,14 @@ function boundScale(pawnValue) {
 }
 
 function updateView(index, value, name) {
-  if (index < 0 || index >= activeKeys.length) {
+  if (index < 1 || index >= activeKeys.length) {
     // This happens all the time, for now, because we always let the engine
     // evaluate six threads and only use the top three threads after the
     // user starts clicking hexes to expand the terrain. All six threads
     // are only used for the six best moves after the Go button is clicked.
     // TODO optimize by sending a smaller MultiPV to the server in the click
     // handler for terrain clicks. This would be a new comms call argument.
-    utils.dbg(`updateView(${index}, ${value}, ${name}): activeKeys.length is ${activeKeys.length}`);
+    // utils.dbg(`updateView(${index}, ${value}, ${name}): activeKeys.length is ${activeKeys.length}`);
     return;
   }
 
@@ -390,17 +392,19 @@ document.getElementById("c").addEventListener("click", (e) => {
   primaryServer.stop();
   activeKeys = [];
   freezeAll();
-  activeKeys.push(picked); // new center
+  activeKeys.push(picked); // new center (frozen, center never updates)
 
   // Now add in the new hexcyls that will expand the terrain
   // These will be the only unfrozen hexcyls in the entire terrain.
-  basisVectors.forEach((basisVec) => {
-    let qr = [ picked.qrVec[0]+basisVec[0], picked.qrVec[1]+basisVec[1] ];
+  // Have to skip basisVectors[0] which is [0, 0].
+  for (let i = 1; i < basisVectors.length; i++) {
+    let bv = basisVectors[i];
+    let qr = [ picked.qrVec[0]+bv[0], picked.qrVec[1]+bv[1] ];
     let key = keyFor(qr);
     if (!hexcyls.has(key)) {
       requireHexcylAt(qr);
     }
-  });
+  }
 
   // Now do a soft start on the chess server with the new position.
   // A soft start means the server can keep its transposition table
@@ -416,7 +420,7 @@ document.getElementById("c").addEventListener("click", (e) => {
 
 // Finally, start me up.
 
-board.start();
+board.start(); // TODO enable when server is running
 primaryServer = new comms.ServerConnection(updateView);
 primaryServer.start();
 main();

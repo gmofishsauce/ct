@@ -1,14 +1,23 @@
 // Contains the ServerConnection class
+import * as utils from "./utils.js";
 
-function dbg(msg) {
-    console.log(msg);
+const COMMDB_NONE = 0;
+const COMMDB_LOW = 1;
+const COMMDB_MED = 2;
+const COMMDB_ALL = 3;
+
+let commDebugLevel = COMMDB_LOW;
+
+function commdbg(level, msg) {
+  if (commDebugLevel >= level) {
+    utils.dbg(msg);
+  }
 }
 
-function dbobj(obj) {
-    dbg("=== Properties of ${obj}: ===");
-    for (let prop in obj) {
-        console.log(`  ${prop}: ${obj[prop]}`);
-    }
+function commdbobj(obj) {
+  if (commDebugLevel > level) {
+    utils.dbobj(obj);
+  }
 }
 
 // One instance of private class MessageQueue is used per ServerConnection
@@ -94,7 +103,7 @@ export class ServerConnection {
         const words = line.split(" ");
         switch (words[0]) {
         case "uciok":
-            dbg(`parseResponse(${line})`);
+            commdbg(COMMDB_ALL, `parseResponse(${line})`);
             // Sent at the end of id and options in response to "uci". Init is complete.
             this.outbound.enqueue("setoption name MultiPV value 6\n");
             this.outbound.enqueue("setoption name UCI_ShowWDL value true\n");
@@ -102,7 +111,7 @@ export class ServerConnection {
             this.outbound.enqueue("isready\n");
             break;
         case "id":
-            dbg(`parseResponse(${line})`);
+            commdbg(COMMDB_ALL, `parseResponse(${line})`);
             // next word "name" or "author"; we care about "name Stockfish"
             if (words[1] == "name") {
                 if (words[2] != "Stockfish") {
@@ -112,13 +121,13 @@ export class ServerConnection {
             }
             break;
         case "option":
-            dbg(`parseResponse(${line})`);
+            commdbg(COMMDB_ALL, `parseResponse(${line})`);
             // We care about option name MultiPV type spin default 1 min 1 max 256 type:stdout])
             // And option name UCI_ShowWDL type check default false type:stdout])
             // For now that's it; in the future, Threads, Ponder, and possibly others.
             break;
         case "readyok":
-            dbg(`parseResponse(${line})`);
+            commdbg(COMMDB_ALL, `parseResponse(${line})`);
             // For now we don't need to anything if the engine says it's ready - we
             // just send commands and count on typeahead into the pipe from the server
             // to the chess CLI to hold commands until the server is ready.
@@ -144,7 +153,7 @@ export class ServerConnection {
                 // short info line like "info depth 27 currmove h2h3 currmovenumber 6" not used right now
                 break;
             }
-            dbg(`parseResponse(${line})`);
+            commdbg(COMMDB_ALL, `parseResponse(${line})`);
             for (let i = 0; i < words.length; i++) {
                 let word = words[i];
                 if (word == "multipv") {
@@ -160,7 +169,7 @@ export class ServerConnection {
             break;
         }
         default:
-            dbg("response ignored");
+            commdbg(COMMDB_ALL, `response ignored: ${fromServer}`);
             break;
         }
     }
@@ -172,11 +181,11 @@ export class ServerConnection {
                 this.commState = STATE_CONNECTED;
                 this.outbound.enqueue("uci\n");
             } else {
-                dbg("unexpected STARTED message from server ignored");
+                commdbg(COMMDB_LOW, "unexpected STARTED message from server ignored");
             }
             break;
         case "error":
-            dbg(`error from server: ${msg.error}`);
+            commdbg(COMMDB_LOW, `error from server: ${msg.error}`);
             if (this.commState == STATE_OPENING) {
                 // do nothing; the transmit side will try again soon.
             } else if (this.commState == STATE_CONNECTED) {
@@ -187,13 +196,13 @@ export class ServerConnection {
             this.parseResponse(msg);
             break;
         case "stderr":
-            dbg(`stderr from Stockfish: ${msg.data}`);
+            commdbg(COMMDB_LOW, `stderr from chess server: ${msg.data}`);
             break;
         case "debug":
-            dbg(`debug: ${msg.data}`);
+            commdbg(COMMDB_LOW, `debug: ${msg.data}`);
             break;
         default: // pong, exit, truly unknown
-            dbg(`onmessage(${msg.type}: ${msg.data} (${msg.status})) ignored`);
+            commdbg(COMMDB_MED, `onmessage(${msg.type}: ${msg.data} (${msg.status})) ignored`);
             break;
         }
 
@@ -223,7 +232,7 @@ export class ServerConnection {
     }
 
     doNet() {
-        dbg("doNet()");
+        commdbg(COMMDB_ALL, "doNet()");
         let delay = 537;
         switch (this.commState) {
             case STATE_START:
@@ -252,7 +261,7 @@ export class ServerConnection {
                 delay = 30*1000*1000;
                 break;
             default:
-                dbg(`unknown commState ${this.commState}`);
+                commdbg(COMMDB_NONE, `unknown commState ${this.commState}`);
                 break;
         }
 
@@ -261,7 +270,7 @@ export class ServerConnection {
     }
 
     start() {
-        dbg("start()");
+        commdbg(COMMDB_LOW, "start()");
         setTimeout(() => this.doNet(), 1453);
     }
 }

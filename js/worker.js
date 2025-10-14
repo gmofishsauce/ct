@@ -99,7 +99,6 @@ onmessage = async (e) => {
           );
         };
       } catch (err) {
-        dbg("open: catch ...");
         error(err.message);
       }
       break;
@@ -109,7 +108,6 @@ onmessage = async (e) => {
         let content = JSON.stringify({ type: "stdin", data: msg.data });
         dbg("sending to server: " + content);
         ws.send(content);
-        dbg("content sent");
       } else {
         postMessage({
           type: "error",
