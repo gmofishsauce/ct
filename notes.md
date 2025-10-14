@@ -90,6 +90,8 @@ from the scene when they are all removed, at which point all the hexcyls
 will be removed from the scene and serially reallocated as the scene refills.
 ```
 
+# START OF AI REVIEW
+
 Notes from GPT-5 mini on 10/7/2025:
 
 
@@ -344,3 +346,17 @@ I don’t have the current contents for comms.js and utils.js in this message. P
 
 Once I have those files I’ll do the same concise, line-level review and propose small, safe patches.
 ```
+
+# END OF AI REVIEW
+
+# Chessboard integration:
+
+Step 1: Allow only valid FEN in text box, no "moves ..". When Go, validate FEN with chess.js,
+clear text box if bad. Otherwise set FEN on chessboard and use as starting position. If "Go"
+on empty text box, send "startpos".
+
+When move on chessboard, ... ? Can I pass a new FEN to Stockfish without "ucinewgame" ... ?
+Yes. So stop server, get new FEN, send to server, much like Hexcyl click. For a start, don't
+fix Hexcyl click to drive the board (yet).
+
+Step 2: when Hexcyl click, set the board, and then do the entire "move on chessboard" sequence.

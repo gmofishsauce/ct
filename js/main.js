@@ -23,6 +23,12 @@ const scene = new THREE.Scene();
 
 let primaryServer = null;
 
+import { COLOR } from "cm-chessboard";
+let nextPlayerToMove = COLOR.white;
+
+import { validateFen } from 'chess.js'
+let currentFen = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1" // start
+
 function lights() {
   const lightColor = 0xffffff;
   let lightIntensity = 2;
@@ -324,7 +330,6 @@ document.getElementById("c").addEventListener("keydown", (e) => {
 
 const goButton = document.getElementById("go");
 const actionText = document.getElementById("action");
-let currentFenWithMoves = "";
 
 // "Hard" restart. Empty the terrain and the active set. Remove
 // all hexcyls from the scene ((1) => (3) and (2) => (3) transitions;
@@ -333,37 +338,27 @@ let currentFenWithMoves = "";
 // Note: the string hacking is all temporary. In time we will integrate
 // a little chessboard and clean this all up.
 goButton.addEventListener("click", function () {
-  currentFenWithMoves = actionText.value;
-  utils.dbg(`go: ${currentFenWithMoves}`);
-
-  if (currentFenWithMoves.length > 0) {
-    // is a FEN with optional "moves ..." at the end?
-    // if so, we need to add the string "fen" for UCI.
-    const fields = currentFenWithMoves.split(" ");
-    if (fields.length >= 6 && fields[0].includes("/")) {
-      currentFenWithMoves = "fen " + currentFenWithMoves;
-    } else if (!currentFenWithMoves.startsWith("startpos")) {
-      // Otherwise, if it doesn't start with "startpos",
-      // it's garbage, so clear it.
-      currentFenWithMoves = "";
-      alert("?"); // With love, ed.
-    }
+  const proposedFen = actionText.value;
+  const validator = validateFen(proposedFen);
+  if (!validator.ok) {
+    alert(`Invalid FEN: ${proposedFen}\n${validator.error}`);
+    return;
   }
 
-  if (currentFenWithMoves.length > 0) {
-    // All hexcyls transition to state (3),
-    // not visible but reclaimable.
-    activeKeys = [];
-    for (const [k, v] of hexcyls) {
-      utils.dbg(`STATE ${k} (1),(2)=>(3)`);
-      scene.remove(v.group);
-    }
-    unfreezeAll();
-    basisVectors.forEach((qrVec) => {
-      requireHexcylAt(qrVec);
-    });
-    primaryServer.startEngine(currentFenWithMoves);
+  // All hexcyls transition to state (3),
+  // not visible but reclaimable.
+  currentFen = proposedFen;
+  activeKeys = [];
+  for (const [k, v] of hexcyls) {
+    utils.dbg(`STATE ${k} (1),(2)=>(3)`);
+    scene.remove(v.group);
   }
+  unfreezeAll();
+  basisVectors.forEach((qrVec) => {
+    // including [0, 0]!
+    requireHexcylAt(qrVec);
+  });
+  primaryServer.startEngine(currentFen);
 });
 
 const pickHelper = new utils.PickHelper();
@@ -420,7 +415,8 @@ document.getElementById("c").addEventListener("click", (e) => {
 
 // Finally, start me up.
 
-board.start(); // TODO enable when server is running
+board.start(nextPlayerToMove); // TODO don't enable until server is running
 primaryServer = new comms.ServerConnection(updateView);
+actionText.value = currentFen;
 primaryServer.start();
 main();
