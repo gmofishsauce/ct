@@ -209,12 +209,12 @@ export class ServerConnection {
         this.setStatus();
     }
 
-    startEngine(cmd) {
+    startEngine(fen) {
         this.outbound.enqueue("stop\n");
         this.outbound.enqueue("isready\n");
         this.outbound.enqueue("ucinewgame\n");
         this.outbound.enqueue("isready\n");
-        this.outbound.enqueue("position " + cmd + "\n");
+        this.outbound.enqueue("position fen " + fen + "\n");
         this.outbound.enqueue("go infinite\n");
     }
 
@@ -227,8 +227,8 @@ export class ServerConnection {
     // MultiPV to something that matches that actual number
     // of threads, rather than leaving it at 6. This can be
     // done as an option to "go" rather than a setoption.
-    move(cmd) {
-        this.outbound.enqueue("position " + cmd + "\n");
+    move(fen) {
+        this.outbound.enqueue("position fen " + fen + "\n");
         this.outbound.enqueue("go infinite\n");
     }
 

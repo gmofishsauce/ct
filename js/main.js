@@ -365,6 +365,7 @@ function softRestart(newCenter) {
 
   chess.move(newCenter.label);
   currentFen = chess.fen();
+  utils.dbg(`Move to FEN: ${currentFen}`);
   board.setPosition(currentFen);
   primaryServer.move(currentFen);
 }
