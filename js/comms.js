@@ -225,7 +225,8 @@ export class ServerConnection {
 
     // TODO for a major efficiency optimization, reduce
     // MultiPV to something that matches that actual number
-    // of threads, rather than leaving it at 6.
+    // of threads, rather than leaving it at 6. This can be
+    // done as an option to "go" rather than a setoption.
     move(cmd) {
         this.outbound.enqueue("position " + cmd + "\n");
         this.outbound.enqueue("go infinite\n");

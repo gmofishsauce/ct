@@ -11,25 +11,6 @@ import { dbg, dbobj } from "./utils.js";
 
 const chess = new Chess()
 
-// let seed = 71;
-// function random() {
-//     const x = Math.sin(seed++) * 10000;
-//     return x - Math.floor(x);
-// }
-// 
-// function makeEngineMove(chessboard) {
-//     const possibleMoves = chess.moves({verbose: true})
-//     if (possibleMoves.length > 0) {
-//         const randomIndex = Math.floor(random() * possibleMoves.length)
-//         const randomMove = possibleMoves[randomIndex]
-//         setTimeout(() => { // smoother with 500ms delay
-//             chess.move({from: randomMove.from, to: randomMove.to})
-//             chessboard.setPosition(chess.fen(), true)
-//             chessboard.enableMoveInput(inputHandler, COLOR.white)
-//         }, 500)
-//     }
-// }
-
 function inputHandler(event) {
   dbg(`inputHandler ${event}`);
   if (event.type === INPUT_EVENT_TYPE.movingOverSquare) {
@@ -133,6 +114,10 @@ const board = new Chessboard(document.getElementById("board"), {
     }
   ]
 })
+
+export function setPosition(fen) {
+  board.setPosition(fen);
+}
 
 export function start(nextPlayer) {
   board.enableMoveInput(inputHandler, COLOR.white);

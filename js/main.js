@@ -3,6 +3,8 @@ import * as utils from "./utils.js";
 import * as comms from "./comms.js";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import * as board from "./board.js";
+import { Chess } from "Chess.js";
+import { WHITE, BLACK, DEFAULT_POSITION, validateFen } from "Chess.js";
 
 // See https://www.redblobgames.com/grids/hexagons/
 // These are axial coordinates [q, r] with s derived.
@@ -22,12 +24,9 @@ const renderer = new THREE.WebGLRenderer({ antialias: true, canvas });
 const scene = new THREE.Scene();
 
 let primaryServer = null;
-
-import { COLOR } from "cm-chessboard";
-let nextPlayerToMove = COLOR.white;
-
-import { validateFen } from 'chess.js'
+let nextPlayerToMove = WHITE;
 let currentFen = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1" // start
+const chess = new Chess(currentFen);
 
 function lights() {
   const lightColor = 0xffffff;
@@ -324,9 +323,51 @@ function main() {
   requestAnimationFrame(render);
 }
 
-document.getElementById("c").addEventListener("keydown", (e) => {
-  utils.dbg("key: " + e.keyCode); // TODO
-});
+// Clear the terrain and restart the chess server
+// on a FEN provided by the user (or in the initial
+// position at startup time).
+function hardRestart() {
+  // All hexcyls transition to state (3),
+  // not visible but reclaimable.
+  activeKeys = [];
+  for (const [k, v] of hexcyls) {
+    utils.dbg(`STATE ${k} (1),(2)=>(3)`);
+    scene.remove(v.group);
+  }
+  unfreezeAll();
+  basisVectors.forEach((qrVec) => {
+    // including [0, 0]:
+    requireHexcylAt(qrVec);
+  });
+  primaryServer.startEngine(currentFen);
+}
+
+// Restart the chess server working on a new position in the
+// same "game" (continuous exploration thread). Essentially
+// this means we do not send "ucinewgame" on this path.
+function softRestart(newCenter) {
+  primaryServer.stop();
+  activeKeys = [];
+  freezeAll();
+  activeKeys.push(newCenter);
+
+  // Now add in the new hexcyls that will expand the terrain
+  // These will be the only unfrozen hexcyls in the entire terrain.
+  // Have to skip basisVectors[0] which is [0, 0].
+  for (let i = 1; i < basisVectors.length; i++) {
+    let bv = basisVectors[i];
+    let qr = [ newCenter.qrVec[0]+bv[0], newCenter.qrVec[1]+bv[1] ];
+    let key = keyFor(qr);
+    if (!hexcyls.has(key)) {
+      requireHexcylAt(qr);
+    }
+  }
+
+  chess.move(newCenter.label);
+  currentFen = chess.fen();
+  board.setPosition(currentFen);
+  primaryServer.move(currentFen);
+}
 
 const goButton = document.getElementById("go");
 const actionText = document.getElementById("action");
@@ -335,8 +376,6 @@ const actionText = document.getElementById("action");
 // all hexcyls from the scene ((1) => (3) and (2) => (3) transitions;
 // see the long comment about hexcyl states). Send the chess engine
 // a stop and a ucinewgame so it dumps its transposition table.
-// Note: the string hacking is all temporary. In time we will integrate
-// a little chessboard and clean this all up.
 goButton.addEventListener("click", function () {
   const proposedFen = actionText.value;
   const validator = validateFen(proposedFen);
@@ -344,21 +383,8 @@ goButton.addEventListener("click", function () {
     alert(`Invalid FEN: ${proposedFen}\n${validator.error}`);
     return;
   }
-
-  // All hexcyls transition to state (3),
-  // not visible but reclaimable.
   currentFen = proposedFen;
-  activeKeys = [];
-  for (const [k, v] of hexcyls) {
-    utils.dbg(`STATE ${k} (1),(2)=>(3)`);
-    scene.remove(v.group);
-  }
-  unfreezeAll();
-  basisVectors.forEach((qrVec) => {
-    // including [0, 0]!
-    requireHexcylAt(qrVec);
-  });
-  primaryServer.startEngine(currentFen);
+  hardRestart();
 });
 
 const pickHelper = new utils.PickHelper();
@@ -378,39 +404,12 @@ document.getElementById("c").addEventListener("click", (e) => {
   const x = (pos.x / canvas.width) * 2 - 1;
   const y = (pos.y / canvas.height) * -2 + 1; // note we flip Y
   const picked = pickHelper.pick(x, y, scene, cam);
-  // Clicking the center object doesn't do anything.
+  // Clicking the center hexcyl doesn't do anything.
   if (picked == null || picked == activeKeys[0]) {
     return;
   }
-
   // OK, the user clicked on live hexcyl to expand from that point.
-  primaryServer.stop();
-  activeKeys = [];
-  freezeAll();
-  activeKeys.push(picked); // new center (frozen, center never updates)
-
-  // Now add in the new hexcyls that will expand the terrain
-  // These will be the only unfrozen hexcyls in the entire terrain.
-  // Have to skip basisVectors[0] which is [0, 0].
-  for (let i = 1; i < basisVectors.length; i++) {
-    let bv = basisVectors[i];
-    let qr = [ picked.qrVec[0]+bv[0], picked.qrVec[1]+bv[1] ];
-    let key = keyFor(qr);
-    if (!hexcyls.has(key)) {
-      requireHexcylAt(qr);
-    }
-  }
-
-  // Now do a soft start on the chess server with the new position.
-  // A soft start means the server can keep its transposition table
-  // which speeds up analysis of the new position. Note: we need to
-  // check if the current FEN string already contains the "moves..."
-  // keyword after "fen <FEN>" or "startpos".
-  if (!currentFenWithMoves.includes(" moves")) {
-    currentFenWithMoves += " moves";
-  }
-  currentFenWithMoves += " " + picked.label;
-  primaryServer.move(currentFenWithMoves);
+  softRestart(picked);
 });
 
 // Finally, start me up.
