@@ -1,6 +1,9 @@
 // Contains the ServerConnection class
 import * as utils from "./utils.js";
 
+// TODO take the newlines off the commands
+// and have the server add them.
+
 const COMMDB_NONE = 0;
 const COMMDB_LOW = 1;
 const COMMDB_MED = 2;

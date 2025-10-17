@@ -6,6 +6,8 @@ import * as board from "./board.js";
 import { Chess } from "Chess.js";
 import { WHITE, BLACK, DEFAULT_POSITION, validateFen } from "Chess.js";
 
+// TODO black and white indication in the hexcyl display
+
 // See https://www.redblobgames.com/grids/hexagons/
 // These are axial coordinates [q, r] with s derived.
 
@@ -24,7 +26,6 @@ const renderer = new THREE.WebGLRenderer({ antialias: true, canvas });
 const scene = new THREE.Scene();
 
 let primaryServer = null;
-let nextPlayerToMove = WHITE;
 let currentFen = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1" // start
 const chess = new Chess(currentFen);
 
@@ -48,16 +49,20 @@ function camera() {
   const near = 0.1;
   const far = 25;
   const camera = new THREE.PerspectiveCamera(fov, aspect, near, far);
-
   camera.position.z = 15;
-  const controls = new OrbitControls(camera, canvas);
-  controls.target.set(0, 2, 0);
-  controls.update();
-
   return camera;
 }
 
 const cam = camera();
+
+function newCameraControls() {
+  const controls = new OrbitControls(cam, canvas);
+  controls.target.set(0, 2, 0);
+  controls.update();
+  return controls;
+}
+
+const cameraControls = newCameraControls();
 
 // The "base height" of the hexagonal cylinders is their height when the
 // move evaluation is 0 centipawns (neither positive nor negative for the
@@ -195,7 +200,8 @@ function keyFor(qrVec) {
 
 // Called when the terrain is expanded by clicking on a hexcyl.
 // Freezes all the hexcyls in the terrain. Only newly-added ones
-// are active (not frozen).
+// are active (not frozen). Note: labels of frozen state (1)
+// (meaning "visible") hexcyls still rotate to point at the cam.
 function freezeAll() {
   hexcyls.forEach((hexcyl) => {
     hexcyl.frozen = true;
@@ -225,7 +231,7 @@ function requireHexcylAt(qrVec) {
     if (activeKeys.includes(result)) {
       return result;
     }
-    if (result.parent == null) {
+    if (result.group.parent == null) {
       // state (3) => (1)
       scene.add(result.group);
       makeActive(result);
@@ -276,8 +282,16 @@ function updateView(index, value, name) {
   }
 }
 
+let cameraPositionChanged = false;
+
+function onCameraPositionChange(o) {
+  cameraPositionChanged = true;
+}
+
 function main() {
   lights();
+  // Make all the visible labels look at the camera when it moves:
+  cameraControls.addEventListener('change', onCameraPositionChange);
 
   // OK, Action!
 
@@ -304,11 +318,15 @@ function main() {
         }
         hexcyl.updateHeight(hexcyl.actualScale);
       }
-      // TODO there's no need for this unless the camera position
-      // has changed. Can we efficiently detect changes in the
-      // camera position?
-      hexcyl.labelMesh.lookAt(cam.position);
     });
+
+    if (cameraPositionChanged) {
+      hexcyls.forEach ((hexcyl) => {
+        if (hexcyl.group.parent) { // it's in the scene
+          hexcyl.labelMesh.lookAt(cam.position);
+        }
+      });
+    }
 
     if (resizeRendererToDisplaySize(renderer)) {
       const canvas = renderer.domElement;
@@ -344,7 +362,8 @@ function hardRestart() {
 
 // Restart the chess server working on a new position in the
 // same "game" (continuous exploration thread). Essentially
-// this means we do not send "ucinewgame" on this path.
+// this means we do not send "ucinewgame" and no visible hexcyls
+// are removed from the display.
 function softRestart(newCenter) {
   primaryServer.stop();
   activeKeys = [];
@@ -415,7 +434,7 @@ document.getElementById("c").addEventListener("click", (e) => {
 
 // Finally, start me up.
 
-board.start(nextPlayerToMove); // TODO don't enable until server is running
+board.start(chess.turn()); // TODO don't enable until server is running
 primaryServer = new comms.ServerConnection(updateView);
 actionText.value = currentFen;
 primaryServer.start();
