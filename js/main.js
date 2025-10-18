@@ -2,9 +2,7 @@ import * as THREE from "three";
 import * as utils from "./utils.js";
 import * as comms from "./comms.js";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
-import * as board from "./board.js";
-import { Chess } from "Chess.js";
-import { WHITE, BLACK, DEFAULT_POSITION, validateFen } from "Chess.js";
+import * as position from "./board.js";
 
 // TODO black and white indication in the hexcyl display
 
@@ -27,7 +25,6 @@ const scene = new THREE.Scene();
 
 let primaryServer = null;
 let currentFen = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1" // start
-const chess = new Chess(currentFen);
 
 function lights() {
   const lightColor = 0xffffff;
@@ -365,6 +362,15 @@ function hardRestart() {
 // this means we do not send "ucinewgame" and no visible hexcyls
 // are removed from the display.
 function softRestart(newCenter) {
+  try {
+    position.chess.move(newCenter.label);
+  } catch (err) {
+    // User probably clicked on a random hexcyl
+    // TODO cancel highlighting of hexcyl
+    dbg(`illegal move to ${newCenter.label} ignored`);
+    return;
+  }
+
   primaryServer.stop();
   activeKeys = [];
   freezeAll();
@@ -382,10 +388,9 @@ function softRestart(newCenter) {
     }
   }
 
-  chess.move(newCenter.label);
-  currentFen = chess.fen();
+  currentFen = position.chess.fen();
   utils.dbg(`Move to FEN: ${currentFen}`);
-  board.setPosition(currentFen);
+  position.board.setPosition(currentFen);
   primaryServer.move(currentFen);
 }
 
@@ -398,7 +403,7 @@ const actionText = document.getElementById("action");
 // a stop and a ucinewgame so it dumps its transposition table.
 goButton.addEventListener("click", function () {
   const proposedFen = actionText.value;
-  const validator = validateFen(proposedFen);
+  const validator = position.validate(proposedFen);
   if (!validator.ok) {
     alert(`Invalid FEN: ${proposedFen}\n${validator.error}`);
     return;
@@ -434,7 +439,7 @@ document.getElementById("c").addEventListener("click", (e) => {
 
 // Finally, start me up.
 
-board.start(chess.turn()); // TODO don't enable until server is running
+position.start();
 primaryServer = new comms.ServerConnection(updateView);
 actionText.value = currentFen;
 primaryServer.start();

@@ -6,19 +6,21 @@ import { Accessibility } from "cm-chessboard/src/extensions/accessibility/Access
 import { RightClickAnnotator }
   from "cm-chessboard/src/extensions/right-click-annotator/RightClickAnnotator.js";
 
-import { Chess } from "Chess.js"
+import { Chess, validateFen } from "Chess.js"
 import { dbg, dbobj } from "./utils.js";
 
-const chess = new Chess()
+export const chess = new Chess()
 
 function inputHandler(event) {
-  dbg(`inputHandler ${event}`);
   if (event.type === INPUT_EVENT_TYPE.movingOverSquare) {
     return true; // ignore, but don't cancel move
   }
-  if (event.type !== INPUT_EVENT_TYPE.moveInputFinished) {
+  if (event.type === INPUT_EVENT_TYPE.moveInputFinished) {
     event.chessboard.removeLegalMovesMarkers()
-    return true;
+    return event.legalMove;
+  }
+  if (event.type === INPUT_EVENT_TYPE.moveInputCanceled) {
+    return false;
   }
   if (event.type === INPUT_EVENT_TYPE.moveInputStarted) {
     // mark legal moves
@@ -51,39 +53,30 @@ function inputHandler(event) {
         square: event.squareFrom,
         verbose: true
       })
+      result = false;
       for (const possibleMove of possibleMoves) {
         if (possibleMove.promotion && possibleMove.to === event.squareTo) {
-          event.chessboard.showPromotionDialog(event.squareTo, COLOR.white, (result) => {
-            dbg(`promotion result ${result}`)
+          event.chessboard.showPromotionDialog(event.squareTo, chess.turn(), (result) => {
             if (result.type === PROMOTION_DIALOG_RESULT_TYPE.pieceSelected) {
               chess.move({
                 from: event.squareFrom,
                 to: event.squareTo,
                 promotion: result.piece.charAt(1)
               })
-              event.chessboard.setPosition(chess.fen(), true)
-            } else {
-              // promotion canceled
-              event.chessboard.enableMoveInput(inputHandler, COLOR.white)
-              event.chessboard.setPosition(chess.fen(), true)
+              result = true;
             }
+            event.chessboard.setPosition(chess.fen(), true);
           })
-          result = true;
         }
       }
     }
     return result
   }
-  if (event.type === INPUT_EVENT_TYPE.moveInputFinished) {
-    if (event.legalMove) {
-      return true;
-    }
-  }
-  dbobj(`unknown move even type ${event}`);
-  return true; // ???
+  console.warn(`unknown move event type: ${event.type}`);
+  return true;
 }
 
-const board = new Chessboard(document.getElementById("board"), {
+export const board = new Chessboard(document.getElementById("board"), {
   position: chess.fen(),
   assetsUrl: "../assets/",
   style: {
@@ -115,10 +108,10 @@ const board = new Chessboard(document.getElementById("board"), {
   ]
 })
 
-export function setPosition(fen) {
-  board.setPosition(fen);
+export function validate(fen) {
+  return validateFen(fen);
 }
 
-export function start(nextPlayer) {
-  board.enableMoveInput(inputHandler, COLOR.white);
+export function start() {
+  board.enableMoveInput(inputHandler);
 }
