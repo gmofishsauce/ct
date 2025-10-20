@@ -9,7 +9,26 @@ import { RightClickAnnotator }
 import { Chess, validateFen } from "Chess.js"
 import { dbg, dbobj } from "./utils.js";
 
-export const chess = new Chess()
+export const chess = new Chess();
+
+class PositionChangedEmitter extends EventTarget {
+  constructor(name) {
+    super(); // Call the constructor of the parent EventTarget class
+    this.name = name;
+  }
+
+  raisePositionChanged(event) {
+    const positionChangedEvent = new CustomEvent('positionChanged');
+    positionChangedEvent.wrappedEvent = event;
+    this.dispatchEvent(positionChangedEvent);
+  }
+}
+
+const emitter = new PositionChangedEmitter();
+
+export function addEventListener(handler) {
+    emitter.addEventListener('positionChanged', handler);
+}
 
 function inputHandler(event) {
   if (event.type === INPUT_EVENT_TYPE.movingOverSquare) {
@@ -17,6 +36,9 @@ function inputHandler(event) {
   }
   if (event.type === INPUT_EVENT_TYPE.moveInputFinished) {
     event.chessboard.removeLegalMovesMarkers()
+    if (event.legalMove) {
+      emitter.raisePositionChanged(event);
+    }
     return event.legalMove;
   }
   if (event.type === INPUT_EVENT_TYPE.moveInputCanceled) {

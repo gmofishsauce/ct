@@ -362,15 +362,6 @@ function hardRestart() {
 // this means we do not send "ucinewgame" and no visible hexcyls
 // are removed from the display.
 function softRestart(newCenter) {
-  try {
-    position.chess.move(newCenter.label);
-  } catch (err) {
-    // User probably clicked on a random hexcyl
-    // TODO cancel highlighting of hexcyl
-    dbg(`illegal move to ${newCenter.label} ignored`);
-    return;
-  }
-
   primaryServer.stop();
   activeKeys = [];
   freezeAll();
@@ -434,11 +425,62 @@ document.getElementById("c").addEventListener("click", (e) => {
     return;
   }
   // OK, the user clicked on live hexcyl to expand from that point.
+  try {
+    position.chess.move(picked.label);
+  } catch (err) {
+    // User probably clicked on a random hexcyl
+    // TODO cancel highlighting of hexcyl
+    dbg(`illegal move to ${newCenter.label} ignored`);
+    return;
+  }
+
   softRestart(picked);
 });
 
+// User made a legal move on the chessboard
+function positionChangedHandler(evt) {
+  utils.dbg("positionChangedHandler");
+  utils.dbobj(evt.wrappedEvent);
+  const label = evt.wrappedEvent.squareFrom + evt.wrappedEvent.squareTo;
+  utils.dbg(`label: ${label}`);
+  let newCenter = null;
+  activeKeys.some(hexcyl => {
+    if (label == hexcyl.label) {
+      newCenter = hexcyl;
+      return true;
+    }
+    return false;
+  });
+  if (newCenter == null) {
+    // user made a move that wasn't already a hexcyl;
+    // find an empty neighboring hexcyl and use it.
+    // There will be one, because only legal moves
+    // are allowed and they are all at the frontier.
+    for (let i = 1; i < basisVectors.length; i++) {
+      let bv = basisVectors[i];
+      let qr = [ newCenter.qrVec[0]+bv[0], newCenter.qrVec[1]+bv[1] ];
+      let key = keyFor(qr);
+      if (!hexcyls.has(key)) {
+        newCenter = requireHexcylAt(qr);
+        // XXX refactoring required - this is essentially updateView():
+        // it's required (?) in case the new center is reclaimed hexcyl (?)
+        newCenter.label = label; // XXX TODO FIXME another sign of screwed-up object structure
+        newCenter.updateLabel(label);
+        newCenter.cylMaterial.color.setStyle(utils.makeHexColor(0.0));
+        newCenter.targetScale = boundScale(0.0);
+      }
+    }
+  }
+  if (newCenter == null) {
+    console.warn("move update failed for hexcyls");
+    return;
+  }
+  softRestart(newCenter);
+}
+
 // Finally, start me up.
 
+position.addEventListener(positionChangedHandler);
 position.start();
 primaryServer = new comms.ServerConnection(updateView);
 actionText.value = currentFen;
