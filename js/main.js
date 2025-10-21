@@ -351,7 +351,8 @@ function hardRestart() {
   }
   unfreezeAll();
   basisVectors.forEach((qrVec) => {
-    // including [0, 0]:
+    // including [0, 0] ... this is how
+    // the center hexcyl comes into existence:
     requireHexcylAt(qrVec);
   });
   primaryServer.startEngine(currentFen);
@@ -382,17 +383,14 @@ function softRestart(newCenter) {
   currentFen = position.chess.fen();
   utils.dbg(`Move to FEN: ${currentFen}`);
   position.board.setPosition(currentFen);
+  actionText.value = currentFen;
   primaryServer.move(currentFen);
 }
 
 const goButton = document.getElementById("go");
 const actionText = document.getElementById("action");
 
-// "Hard" restart. Empty the terrain and the active set. Remove
-// all hexcyls from the scene ((1) => (3) and (2) => (3) transitions;
-// see the long comment about hexcyl states). Send the chess engine
-// a stop and a ucinewgame so it dumps its transposition table.
-goButton.addEventListener("click", function () {
+function doGoClick() {
   const proposedFen = actionText.value;
   const validator = position.validate(proposedFen);
   if (!validator.ok) {
@@ -401,6 +399,14 @@ goButton.addEventListener("click", function () {
   }
   currentFen = proposedFen;
   hardRestart();
+}
+
+// "Hard" restart. Empty the terrain and the active set. Remove
+// all hexcyls from the scene ((1) => (3) and (2) => (3) transitions;
+// see the long comment about hexcyl states). Send the chess engine
+// a stop and a ucinewgame so it dumps its transposition table.
+goButton.addEventListener("click", function () {
+  doGoClick();
 });
 
 const pickHelper = new utils.PickHelper();
@@ -437,12 +443,11 @@ document.getElementById("c").addEventListener("click", (e) => {
   softRestart(picked);
 });
 
-// User made a legal move on the chessboard
+// User made a legal move on the chessboard component.
 function positionChangedHandler(evt) {
-  utils.dbg("positionChangedHandler");
-  utils.dbobj(evt.wrappedEvent);
-  const label = evt.wrappedEvent.squareFrom + evt.wrappedEvent.squareTo;
-  utils.dbg(`label: ${label}`);
+  const label = evt.wrappedEvent.squareFrom + evt.wrappedEvent.squareTo; // XXX TODO promotion
+  utils.dbg(`position changed: ${label}`);
+
   let newCenter = null;
   activeKeys.some(hexcyl => {
     if (label == hexcyl.label) {
@@ -451,34 +456,41 @@ function positionChangedHandler(evt) {
     }
     return false;
   });
-  if (newCenter == null) {
-    // user made a move that wasn't already a hexcyl;
-    // find an empty neighboring hexcyl and use it.
-    // There will be one, because only legal moves
-    // are allowed and they are all at the frontier.
-    for (let i = 1; i < basisVectors.length; i++) {
-      let bv = basisVectors[i];
-      let qr = [ newCenter.qrVec[0]+bv[0], newCenter.qrVec[1]+bv[1] ];
-      let key = keyFor(qr);
-      if (!hexcyls.has(key)) {
-        newCenter = requireHexcylAt(qr);
-        // XXX refactoring required - this is essentially updateView():
-        // it's required (?) in case the new center is reclaimed hexcyl (?)
-        newCenter.label = label; // XXX TODO FIXME another sign of screwed-up object structure
-        newCenter.updateLabel(label);
-        newCenter.cylMaterial.color.setStyle(utils.makeHexColor(0.0));
-        newCenter.targetScale = boundScale(0.0);
-      }
-    }
-  }
-  if (newCenter == null) {
-    console.warn("move update failed for hexcyls");
+  if (newCenter != null) {
+    utils.dbg(`position changed: case 1 (move was active)`);
+    softRestart(newCenter);
     return;
   }
+
+  // Special case: the app just opened and there are no hexcyls.
+  // The user made a move on the board instead of clicking "Go".
+  if (hexcyls.size == 0) {
+    utils.dbg(`position changed: case 2 (initialization)`);
+    actionText.value = position.chess.fen();
+    doGoClick();
+    return;
+  }
+
+  // In progress and user made a move that wasn't an active hexcyl.
+  // Analysis is in progress so there are active hexcyls (we sanity
+  // check) and we must "repurpose" on of the active hexcyls. We
+  // don't have
+  if (activeKeys.length < 2) {
+    alert("internal error: move recenter");
+    return;
+  }
+
+  utils.dbg(`position changed: case 3 (repurpose a hex)`);
+  newCenter = activeKeys[1];
+  newCenter.label = label; // XXX TODO FIXME another sign of screwed-up object structure
+  newCenter.updateLabel(label);
+  newCenter.cylMaterial.color.setStyle(utils.makeHexColor(0.0));
+  newCenter.targetScale = boundScale(0.0);
   softRestart(newCenter);
 }
 
 // Finally, start me up.
+// XXX TODO call hardReset() here?
 
 position.addEventListener(positionChangedHandler);
 position.start();
