@@ -51,7 +51,7 @@ to run Stockfish: `../sf/stockfish`. It should respond with a line like this:
 1. Type `uci<enter>`. Stockfish should respond with a list of option settings and end
 with `uciok`. That's it for now; use ^D to shut it down.
 
-1. Continuing in the `srv/` directory, go `go build`. This should create the binary, `srv/srv`.
+1. Continuing in the `srv/` directory, `go build`. This should create the binary, `srv/srv`.
 
 1. Run the binary: `./srv --allowed-origin http://localhost:5173`. It should respond:
 `202X/MM/DD HH:MM:SS Starting server on :8080 (serveStatic=, allowedOrigin="http://localhost:5173", cmd="../sf/stockfish")`
@@ -71,13 +71,15 @@ at upper left.
 
 The string in the text box is a [**FEN**](https://en.wikipedia.org/wiki/Forsyth%E2%80%93Edwards_Notation). In particular, it matches the chessboard: it's the starting position. Click **Go**.
 
-You should see some hexagonal cylinders "grow" into position on the canvas. I call these hexcyls. They display the engine's analysis of the best moves from the starting position, which is represented by the center.
-
-Note: be patient with user interactions. Server communication is intentionally very slow to simplify debugging. It can easily be made faster.
+You should see some hexagonal cylinders "grow" into position on the canvas. I call these hexcyls. They display the engine's analysis of the best moves from the starting position, which is represented by the center. You can use the mouse to reorient the terrain display. Please be patient with user interactions; server communication is intentionally very slow to simplify debugging. It can easily be made faster and will be in the future.
 
 Now click on a "live" hexcyl (not the center one). The chessboard and FEN should display the move. The new "center" hexcyl's unoccupied neighbors rise to display the best moves of this new position.
 
 Make a move on the chessboard that is not one of the moves recommended by the engine (for example, try moving the king, or an edge pawn). Again, everything else should update. Do this a few times. Finally, click Go again. Clicking Go clears the canvas and restarts analysis with the FEN as the center hexcyl.
+
+**Important notes:** when you're done with ChessTerrain, be sure and kill the server,
+which should kill Stockfish. If you don't, it will continue analyzing, which uses significant
+CPU and will quickly drain the battery on your laptop.
 
 I'm curious for feedback on the display.
 
