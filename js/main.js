@@ -87,7 +87,8 @@ function makeDynamicLabelTexture(text) {
 
   function update(newText) {
     ctx.clearRect(0, 0, size, size);
-    ctx.fillStyle = "#000000";
+    // This probably isn't right ... we may create hexes not for the player on the move.
+    ctx.fillStyle = (position.chess.turn() == 'w') ? '#FFFFFF' : '#000000';
     ctx.font = "48px sans-serif";
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
@@ -252,7 +253,9 @@ function requireHexcylAt(qrVec) {
 }
 
 function boundScale(pawnValue) {
-  let result = neutralScale + pawnValue / 2.0;
+  if (pawnValue < -5.0) pawnValue = -5.0;
+  if (pawnValue >  5.0) pawnValue = 5.0;
+  let result = neutralScale + pawnValue / 5.0;
   if (result < minScale) result = minScale;
   if (result > maxScale) result = maxScale;
   return result;
