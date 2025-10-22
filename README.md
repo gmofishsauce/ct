@@ -13,7 +13,7 @@ Javascript program. It is pure HTML, handwritten CSS, and Javascript, using no f
 ## Building and Running
 
 The prototype has three major components, each written in a different programming language.
-To build and run the prototype, you need to correct tooling for each.
+To build and run the prototype, you need the correct tooling for each.
 
 ### Stockfish chess engine (the "engine")
 
