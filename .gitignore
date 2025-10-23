@@ -11,7 +11,10 @@ sf/stockfish
 srv/srv
 
 # We have a Javascript front end we build with Vite 
-js/node_modules
+js/src/node_modules
+
+# Or the built Javascript, whether in js/ or in srv/
+dist/
 
 # The rest is the Github template for Go, which should cover the Golang server.
 

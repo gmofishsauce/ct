@@ -2,7 +2,7 @@
 // Minimal Gorilla-based Go server for a single, preconfigured CLI with streaming WebSocket I/O.
 //
 // Dev mode: run alongside Vite; only exposes /api and /ws. Use Vite proxy to forward requests.
-// Prod mode: also serves Vite-built static files from ./dist or from an embedded FS.
+// Prod mode: also serves Vite-built static files from ./dist or from an embedded FS (DISABLED 10/2025)
 // Security: the CLI path is configured at startup (flag/env).
 // WS streaming: /ws/run spawns the CLI with the current options; streams stdout/stderr,
 //    accepts stdin via messages, and reports exit status.
@@ -10,7 +10,7 @@
 // Flags / env vars:
 //   --addr (ADDR)                : listen address (default ":8080")
 //   --allowed-origin (ALLOWED_ORIGIN): allow Origin for CORS/WS in dev (e.g., http://localhost:5173)
-//   --serve-static (SERVE_STATIC): "" | "fs" | "embed"  ("fs" serves ./dist from disk, "embed" serves embedded dist)
+//   --serve-static (SERVE_STATIC): "" | "fs" | "embed"  ("fs" serves ./dist from disk, "embed" [DISABLED] serves embedded dist)
 //   --static-dir (STATIC_DIR)    : directory for static files when serve-static=fs (default "dist")
 //   --cmd (CLI_CMD)              : REQUIRED. Path to the CLI to run (e.g., "./mytool" or "ffmpeg")
 //   --cmd-args (CLI_ARGS)        : OPTIONAL. Comma-separated fixed args always passed before options (e.g., "--fast,-n,10")
@@ -43,7 +43,7 @@ import (
     "bufio"
     "bytes"
     "context"
-    "embed"
+    // "embed" DISABLED
     "encoding/json"
     "errors"
     "flag"
@@ -65,15 +65,15 @@ import (
 )
 
 // --- Embedded frontend (optional) ---
-//go:embed dist
-var embeddedDist embed.FS // contains the "dist" directory created by `npm run build`
+// go:embed dist DISABLED
+//var embeddedDist embed.FS // contains the "dist" directory created by `npm run build`
 
 // --- Config and state ---
 
 type serverConfig struct {
     Addr          string
     AllowedOrigin string
-    ServeStatic   string // "", "fs", "embed"
+    ServeStatic   string // "", "fs", "embed" (DISABLED)
     StaticDir     string
     CommandPath   string   // REQUIRED: the CLI to execute
     FixedArgs     []string // from CLI_ARGS (comma-separated)
@@ -105,14 +105,14 @@ func main() {
         static := http.FileServer(http.Dir(cfg.StaticDir))
         r.PathPrefix("/").Handler(spaFallbackFS(static, filepath.Join(cfg.StaticDir, "index.html")))
         log.Printf("Serving static files from disk: %s", cfg.StaticDir)
-    case "embed":
-        distFS, err := fs.Sub(embeddedDist, "dist")
-        if err != nil {
-            log.Fatalf("embed fs error: %v", err)
-        }
-        static := http.FileServer(http.FS(distFS))
-        r.PathPrefix("/").Handler(spaFallbackEmbed(static, distFS))
-        log.Printf("Serving static files from embedded dist/")
+    //case "embed": DISABLED
+    //    distFS, err := fs.Sub(embeddedDist, "dist")
+    //    if err != nil {
+    //        log.Fatalf("embed fs error: %v", err)
+    //    }
+    //    static := http.FileServer(http.FS(distFS))
+    //    r.PathPrefix("/").Handler(spaFallbackEmbed(static, distFS))
+    //    log.Printf("Serving static files from embedded dist/")
     default:
         // no static serving in dev; only API/WS
     }
@@ -138,14 +138,15 @@ func main() {
 func loadConfig() (serverConfig, error) {
     addr := envOr("ADDR", ":8080")
     allowed := envOr("ALLOWED_ORIGIN", "")
-    serveStatic := envOr("SERVE_STATIC", "") // "", "fs", "embed"
+    serveStatic := envOr("SERVE_STATIC", "") // "", "fs", ("embed" DISABLED)
     staticDir := envOr("STATIC_DIR", "dist")
     cmdPath := envOr("CLI_CMD", "../sf/stockfish")
     fixedArgStr := envOr("CLI_ARGS", "")
 
     flag.StringVar(&addr, "addr", addr, "server listen address")
     flag.StringVar(&allowed, "allowed-origin", allowed, "allowed Origin for CORS/WS (dev: http://localhost:5173)")
-    flag.StringVar(&serveStatic, "serve-static", serveStatic, "static mode: '', 'fs', or 'embed'")
+	// 'embed' removed from choices next
+    flag.StringVar(&serveStatic, "serve-static", serveStatic, "static mode: '', 'fs'")
     flag.StringVar(&staticDir, "static-dir", staticDir, "directory for static files when serve-static=fs")
     flag.StringVar(&cmdPath, "cmd", cmdPath, "optional path to CLI command to execute")
     flag.StringVar(&fixedArgStr, "cmd-args", fixedArgStr, "optional comma-separated fixed args passed before options")

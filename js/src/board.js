@@ -100,7 +100,7 @@ function inputHandler(event) {
 
 export const board = new Chessboard(document.getElementById("board"), {
   position: chess.fen(),
-  assetsUrl: "../assets/",
+  assetsUrl: "/assets/",
   style: {
     borderType: BORDER_TYPE.none,
     pieces: {
