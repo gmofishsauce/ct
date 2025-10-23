@@ -1,4 +1,7 @@
 # ct
+
+# UPDATE - don't take the time to follow these instructions. Constact me.
+
 ## Overview
 
 The application runs in a web page and makes requests to a localhost-only server.
