@@ -1,7 +1,5 @@
 # ct
 
-# UPDATE - don't take the time to follow these instructions. Constact me.
-
 ## Overview
 
 The application runs in a web page and makes requests to a localhost-only server.
@@ -27,52 +25,58 @@ C++ compiler for that architecture. I'm uncertain about MSVC and Windows.
 ### Local server (the "server")
 
 The server is written in Golang. It was vibe-coded by ChatGPT5. You'll need the Go compiler
-v1.23 or later for your platform.
+v1.24 or later for your platform.
 
 ### Front end (the "client")
 
-You should install npm, npx and vite. See https://threejs.org/manual/#en/installation and
-scroll down to **Option 1**. Follow the instructions. The server does not use node.js.
+The repo contains a copy of a recent Javascript build artifact,
+so you don't need to build the Javascript. The copy is located in the `srv` (server) directory, `srv/dist`. The instructions below direct
+you to run the server to serve this prebuilt distribution. Separate
+instructions describing how to develop and build the Javascript are
+provided later.
 
 ### Specifics
 
-1. Open a command line and change to `sf/Stockfish-master/src` in the repo. Type `make`.
-This will give examples of the required platform-specific command line. There are many
-supported architectures, mostly covering performance-oriented variations on the x86-64
-architecture (e.g. `ARCH=x86-64-sse41-popcnt` for x86-64 with SSE4.1 and the population
-count instruction). **There's no need to optimize.** I recommend using `ARCH=x86-64` or
-`ARCH=apple-silicon` as appropriate, e.g. `make -j profile-build ARCH=apple-silicon`.  If you have difficulties building Stockfirst for
-your platform, please let me know.
+1. Pull the repo and open a command line tool in the repo's top level directory,
+`<repo-path>/ct`.
 
-1. Move the generated binary up a couple of directories to `sf/` so the binary is
-`<repo>/sf/stockfish`.
+1. `cd sf/Stockfish-master/src` and `make`. This will give examples of the required platform-specific command line. There are many supported architectures. **There's no need to optimize.** I recommend using `ARCH=x86-64` or `ARCH=apple-silicon` as appropriate, e.g. `make -j profile-build ARCH=apple-silicon`.  If you have issues building Stockfirst for your platform, please let me know.
+
+1. Move the generated binary up a couple of directories: `mv stockfish ../..`, so the
+binary should be called `<repo-path>/ct/sf/stockfish`.
 
 1. Change directories to the `srv/` top level directory in the repo. Enter this command
 to run Stockfish: `../sf/stockfish`. It should respond with a line like this:
 `Stockfish dev-20250819-4754edd1 by the Stockfish developers (see AUTHORS file)`
 
 1. Type `uci<enter>`. Stockfish should respond with a list of option settings and end
-with `uciok`. That's it for now; use ^D to shut it down.
+with `uciok`. That's it for now. Use ^D to shut down Stockfish.
 
 1. Continuing in the `srv/` directory, `go build`. This should create the binary, `srv/srv`.
 
-1. Run the binary: `./srv --allowed-origin http://localhost:5173`. It should respond:
-`202X/MM/DD HH:MM:SS Starting server on :8080 (serveStatic=, allowedOrigin="http://localhost:5173", cmd="../sf/stockfish")`
+1. Run the binary: `./srv --serve-static fs`. It should respond:
+`202X/MM/DD HH:MM:SS Starting server on :8080 (serveStatic=fs, allowedOrigin="", cmd="../sf/stockfish")`.
 
-1. Open a second command line window and cd to `<repo>/js`. Run: `npx vite`. You should
-see something like `VITE v7.1.9  ready in 218 ms` and below that, some lines including
-`➜  Local:   http://localhost:5173/`.
 
-1. Open a web page and visit `http://localhost:5173`.
+1. Open a browser and visit `http://localhost:8080`. You should see a gray background with a small chessboard at upper left. The status bar at the bottom should say **server status: running**. Don't touch the controls yet.
+
+1. **Please wait patiently while the web app establishes communication
+with the server** - this is intentionally very slow right now for debugging purposes.
+
+1. In the server command line window, you should see some lines emitted including
+```
+2025/10/24 10:16:37 server received map[data:setoption name MultiPV value 6
+```
+and finally `server received map[data:isready`.
 
 ## Usage
 
-You should see a page with a gray canvas and darker gray command and status bars at top and bottom.
-The top bar should contain a text box populated with a string and there should be button labeled **Go**.
-Since you left the server running, the bottom bar should contain the message `server status: running`. There should be a small chessboard
-at upper left.
+You should be looking at a page with a gray canvas and darker gray command and status bars at top and bottom. The top bar should contain a text box populated with a string and there should be button labeled **Go**.
+The bottom bar should contain the message `server status: running`. There should be a small chessboard at upper left.
 
-The string in the text box is a [**FEN**](https://en.wikipedia.org/wiki/Forsyth%E2%80%93Edwards_Notation). In particular, it matches the chessboard: it's the starting position. Click **Go**.
+The string in the text box is a [**FEN**](https://en.wikipedia.org/wiki/Forsyth%E2%80%93Edwards_Notation). In particular, it matches the chessboard: it's the starting position.
+
+Click **Go**.
 
 You should see some hexagonal cylinders "grow" into position on the canvas. I call these hexcyls. They display the engine's analysis of the best moves from the starting position, which is represented by the center. You can use the mouse to reorient the terrain display. Please be patient with user interactions; server communication is intentionally very slow to simplify debugging. It can easily be made faster and will be in the future.
 
@@ -80,9 +84,23 @@ Now click on a "live" hexcyl (not the center one). The chessboard and FEN should
 
 Make a move on the chessboard that is not one of the moves recommended by the engine (for example, try moving the king, or an edge pawn). Again, everything else should update. Do this a few times. Finally, click Go again. Clicking Go clears the canvas and restarts analysis with the FEN as the center hexcyl.
 
-**Important notes:** when you're done with ChessTerrain, be sure and kill the server,
-which should kill Stockfish. If you don't, it will continue analyzing, which uses significant
-CPU and will quickly drain the battery on your laptop.
+**Important notes:** when you're done with ChessTerrain, be sure and kill the server, nwhich should kill Stockfish. If you don't, it will continue analyzing, which uses significant CPU and will quickly drain the battery on your laptop.
 
 I'm curious for feedback on the display.
+
+## Developing and building the Javascript
+
+1. Ensure you have installed up-to-date versions of node, npm, npx, and vite.
+
+1. Open a command line window and cd to `<repo-path>/ct/js/src`.
+
+1. Type `npm install`. It should install about 61 packages. It may complain about security vulnerabilities. If you're concerned, you can type `npm audit` to see the issue and `npm audit fix` to update with a fix.
+
+1. Run: `npx vite`. You should see something like `VITE v7.1.12  ready in 198 ms` and below that, some lines including: `➜  Local:   http://localhost:5173/`.
+
+1. For development purposes, you should delete the `dist/` directory in the `srv/` directory and run the server like this: `./srv --allowed-origin http://localhost:5173` (note that `--serve-static` is not present in the command line).
+
+1. Visit `http://localhost:5173` and the app should appear.
+
+
 

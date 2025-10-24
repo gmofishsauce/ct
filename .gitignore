@@ -5,16 +5,20 @@
 # from source in this repo, so the excludes are somewhat involved.
 
 # We have a local stockfish binary built from a zipfile and a server.
-# Don't commit the stockfish source/build tree or binary; just commit the downloaded zip.
-sf/Stockfish-master
 sf/stockfish
 srv/srv
 
 # We have a Javascript front end we build with Vite 
 js/src/node_modules
+.vite
 
-# Or the built Javascript, whether in js/ or in srv/
-dist/
+# js/dist is the build artifact resulting from npx vite build. Normally, one
+# does not commit this, any more than any other build artifact. But the Golang
+# server in srv/ is designed to server dist/ if it's present, and this makes it
+# much simpler to try out the app - the user doesn't have to mess with npm, npx,
+# vite, js packages, etc. So for now we allow dist/ to be committed, expecting
+# it will have been moved to srv/dist, but not demanding that.
+# dist/
 
 # The rest is the Github template for Go, which should cover the Golang server.
 
