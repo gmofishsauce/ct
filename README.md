@@ -55,7 +55,7 @@ with `uciok`. That's it for now. Use ^D to shut down Stockfish.
 1. Continuing in the `srv/` directory, `go build`. This should create the binary, `srv/srv`.
 
 1. Run the binary: `./srv --serve-static fs`. It should respond:
-`202X/MM/DD HH:MM:SS Starting server on :8080 (serveStatic=fs, allowedOrigin="", cmd="../sf/stockfish")`.
+`202X/MM/DD HH:MM:SS Starting server on :8080 (serveStatic=fs, allowedOrigin="", cmd="../sf/stockfish")` and then `Serving static files from disk: dist`.
 
 
 1. Open a browser and visit `http://localhost:8080`. You should see a gray background with a small chessboard at upper left. The status bar at the bottom should say **server status: running**. Don't touch the controls yet.
@@ -80,11 +80,11 @@ Click **Go**.
 
 You should see some hexagonal cylinders "grow" into position on the canvas. I call these hexcyls. They display the engine's analysis of the best moves from the starting position, which is represented by the center. You can use the mouse to reorient the terrain display. Please be patient with user interactions; server communication is intentionally very slow to simplify debugging. It can easily be made faster and will be in the future.
 
-Now click on a "live" hexcyl (not the center one). The chessboard and FEN should display the move. The new "center" hexcyl's unoccupied neighbors rise to display the best moves of this new position.
+Now click on a "live" hexcyl (not the center one). The chessboard and FEN should display the move. The new "center" hexcyl's unoccupied neighbors rise to display the best moves of this new position. These hexcyls are not as tall, are red instead of green, and are labeled in black text instead of white text. They are Black's best responses to White's move, and White has the small advantage of having moved first.
 
 Make a move on the chessboard that is not one of the moves recommended by the engine (for example, try moving the king, or an edge pawn). Again, everything else should update. Do this a few times. Finally, click Go again. Clicking Go clears the canvas and restarts analysis with the FEN as the center hexcyl.
 
-**Important notes:** when you're done with ChessTerrain, be sure and kill the server, nwhich should kill Stockfish. If you don't, it will continue analyzing, which uses significant CPU and will quickly drain the battery on your laptop.
+**Important note:** when you're done with ChessTerrain, be sure and kill the server, nwhich should kill Stockfish. If you don't, it will continue analyzing, which uses significant CPU and will quickly drain the battery on your laptop. In the future, the server will be more sensitive to loss of client connection and will include a configurable timeout.
 
 I'm curious for feedback on the display.
 
