@@ -40,7 +40,7 @@ provided later.
 1. Pull the repo and open a command line tool in the repo's top level directory,
 `<repo-path>/ct`.
 
-1. `cd sf/Stockfish-master/src` and `make`. This will give examples of the required platform-specific command line. There are many supported architectures. **There's no need to optimize.** I recommend using `ARCH=x86-64` or `ARCH=apple-silicon` as appropriate, e.g. `make -j profile-build ARCH=apple-silicon`.  If you have issues building Stockfirst for your platform, please let me know.
+1. `cd sf/Stockfish-master/src` and `make`. This will give examples of the required platform-specific command line. There are many supported architectures. **There's no need to optimize.** I recommend using `ARCH=x86-64` or `ARCH=apple-silicon` as appropriate, e.g. `make -j profile-build ARCH=apple-silicon`.  If you have issues building Stockfish for your platform, please let me know.
 
 1. Move the generated binary up a couple of directories: `mv stockfish ../..`, so the
 binary should be called `<repo-path>/ct/sf/stockfish`.
@@ -84,7 +84,7 @@ Now click on a "live" hexcyl (not the center one). The chessboard and FEN should
 
 Make a move on the chessboard that is not one of the moves recommended by the engine (for example, try moving the king, or an edge pawn). Again, everything else should update. Do this a few times. Finally, click Go again. Clicking Go clears the canvas and restarts analysis with the FEN as the center hexcyl.
 
-**Important note:** when you're done with ChessTerrain, be sure and kill the server, nwhich should kill Stockfish. If you don't, it will continue analyzing, which uses significant CPU and will quickly drain the battery on your laptop. In the future, the server will be more sensitive to loss of client connection and will include a configurable timeout.
+**Important note:** when you're done with ChessTerrain, be sure and kill the server. This should kill Stockfish. If you don't, it will continue analyzing, which uses significant CPU and will quickly drain the battery on your laptop. In the future, the server will be more sensitive to loss of client connection and will include a configurable timeout.
 
 I'm curious for feedback on the display.
 
@@ -101,6 +101,8 @@ I'm curious for feedback on the display.
 1. For development purposes, you should delete the `dist/` directory in the `srv/` directory and run the server like this: `./srv --allowed-origin http://localhost:5173` (note that `--serve-static` is not present in the command line).
 
 1. Visit `http://localhost:5173` and the app should appear.
+
+1. To rebuild the `dist`, if desired: `npx vite build`. Manually move the dist to `../srv`.
 
 
 
