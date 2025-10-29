@@ -1,9 +1,6 @@
 // Contains the ServerConnection class
 import * as utils from "./utils.js";
 
-// TODO take the newlines off the commands
-// and have the server add them.
-
 const COMMDB_NONE = 0;
 const COMMDB_LOW = 1;
 const COMMDB_MED = 2;
@@ -108,10 +105,10 @@ export class ServerConnection {
         case "uciok":
             commdbg(COMMDB_ALL, `parseResponse(${line})`);
             // Sent at the end of id and options in response to "uci". Init is complete.
-            this.outbound.enqueue("setoption name MultiPV value 6\n");
-            this.outbound.enqueue("setoption name UCI_ShowWDL value true\n");
-            this.outbound.enqueue("ucinewgame\n");
-            this.outbound.enqueue("isready\n");
+            this.outbound.enqueue("setoption name MultiPV value 6");
+            this.outbound.enqueue("setoption name UCI_ShowWDL value true");
+            this.outbound.enqueue("ucinewgame");
+            this.outbound.enqueue("isready");
             break;
         case "id":
             commdbg(COMMDB_ALL, `parseResponse(${line})`);
@@ -182,7 +179,7 @@ export class ServerConnection {
         case "started":
             if (this.commState == STATE_OPENING) {
                 this.commState = STATE_CONNECTED;
-                this.outbound.enqueue("uci\n");
+                this.outbound.enqueue("uci");
             } else {
                 commdbg(COMMDB_LOW, "unexpected STARTED message from server ignored");
             }
@@ -213,17 +210,17 @@ export class ServerConnection {
     }
 
     startEngine(fen) {
-        this.outbound.enqueue("stop\n");
-        this.outbound.enqueue("isready\n");
-        this.outbound.enqueue("ucinewgame\n");
-        this.outbound.enqueue("isready\n");
-        this.outbound.enqueue("position fen " + fen + "\n");
-        this.outbound.enqueue("go infinite\n");
+        this.outbound.enqueue("stop");
+        this.outbound.enqueue("isready");
+        this.outbound.enqueue("ucinewgame");
+        this.outbound.enqueue("isready");
+        this.outbound.enqueue("position fen " + fen);
+        this.outbound.enqueue("go infinite");
     }
 
     stop() {
-        this.outbound.enqueue("stop\n");
-        this.outbound.enqueue("isready\n");
+        this.outbound.enqueue("stop");
+        this.outbound.enqueue("isready");
     }
 
     // TODO for a major efficiency optimization, reduce
@@ -231,8 +228,8 @@ export class ServerConnection {
     // of threads, rather than leaving it at 6. This can be
     // done as an option to "go" rather than a setoption.
     move(fen) {
-        this.outbound.enqueue("position fen " + fen + "\n");
-        this.outbound.enqueue("go infinite\n");
+        this.outbound.enqueue("position fen " + fen);
+        this.outbound.enqueue("go infinite");
     }
 
     doNet() {

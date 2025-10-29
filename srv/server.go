@@ -258,7 +258,8 @@ func wsRunHandler(w http.ResponseWriter, r *http.Request, cfg serverConfig) {
                 switch msg["type"] {
                 case "stdin":
                     if s, _ := msg["data"].(string); s != "" {
-						if _, e := stdin.Write([]byte(s)); e != nil {
+						// Append newline for UCI protocol
+						if _, e := stdin.Write([]byte(s + "\n")); e != nil {
 							sendJSON(conn, map[string]any{
 								"type":"error","error":fmt.Sprintf("writing to Stockfish: %v", e),
 							})

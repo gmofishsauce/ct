@@ -78,8 +78,8 @@ func TestServerIntegration(t *testing.T) {
 	}
 	t.Logf("Received expected type: %v", recv["type"])
 
-	// Step 3 - send stdin
-	msg := map[string]string{"type": "stdin", "data": "hello\n"}
+	// Step 3 - send stdin (server will append newline)
+	msg := map[string]string{"type": "stdin", "data": "hello"}
 	if err := conn.WriteJSON(msg); err != nil {
 		t.Fatalf("failed to send stdin: %v", err)
 	}
