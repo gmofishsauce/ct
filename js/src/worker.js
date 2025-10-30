@@ -27,6 +27,8 @@
 
 let ws = null;
 let baseUrl = "";
+let retryDelay = 1000; // Start with 1 second
+const maxRetryDelay = 30000; // Max 30 seconds
 
 // Post a debug message back to the main thread
 function dbg(msg) {
@@ -45,6 +47,78 @@ function statusString(ws) {
   return ws ? names[ws.readyState] : "down";
 }
 
+// Attempt to connect to the server
+async function attemptConnection() {
+  try {
+    dbg("attempting connection");
+
+    // Check health
+    const resp = await fetch(baseUrl + "/api/health");
+    if (!resp.ok) {
+      error("/api/health returned " + resp.status);
+      scheduleRetry();
+      return;
+    }
+    const data = await resp.json();
+    if (!data.ok) {
+      error("/api/health response not ok");
+      scheduleRetry();
+      return;
+    }
+    dbg("health check OK");
+
+    // Open websocket
+    const wsUrl = baseUrl.replace(/^http/, "ws") + "/ws/run";
+    ws = new WebSocket(wsUrl);
+    dbg("web socket created");
+
+    ws.onopen = () => {
+      dbg("web socket opened");
+      retryDelay = 1000; // Reset retry delay on successful connection
+      postMessage({ type: "opened", status: statusString(ws) });
+    };
+
+    ws.onmessage = (event) => {
+      try {
+        const recv = JSON.parse(event.data);
+        // forward all fields from server, adding current status
+        const out = Object.assign({}, recv, { status: statusString(ws) });
+        postMessage(out);
+      } catch (err) {
+        error("invalid JSON from server");
+      }
+    };
+
+    ws.onerror = (err) => {
+      error(
+        "WebSocket error: " +
+          (err && err.message ? err.message : String(err))
+      );
+      scheduleRetry();
+    };
+
+    ws.onclose = (e) => {
+      error(
+        "WebSocket closed: code " +
+          (e.code || "unknown") +
+          " reason " +
+          (e.reason || "")
+      );
+      scheduleRetry();
+    };
+  } catch (err) {
+    error(err.message);
+    scheduleRetry();
+  }
+}
+
+// Schedule a retry with exponential backoff
+function scheduleRetry() {
+  dbg(`scheduling retry in ${retryDelay}ms`);
+  setTimeout(attemptConnection, retryDelay);
+  retryDelay = Math.min(retryDelay * 2, maxRetryDelay);
+}
+
 // Handle a message posted to this worker's pump.
 onmessage = async (e) => {
   const msg = e.data;
@@ -53,54 +127,8 @@ onmessage = async (e) => {
     case "open":
       dbg("open");
       baseUrl = msg.baseUrl || "";
-      try {
-        // Check health
-        const resp = await fetch(baseUrl + "/api/health");
-        if (!resp.ok) {
-          error("/api/health returned " + resp.status);
-          break;
-        }
-        const data = await resp.json();
-        if (!data.ok) {
-          error("/api/health response not ok");
-          break;
-        }
-        dbg("health check OK");
-
-        // Open websocket
-        const wsUrl = baseUrl.replace(/^http/, "ws") + "/ws/run";
-        ws = new WebSocket(wsUrl);
-        dbg("web socket created");
-
-        ws.onmessage = (event) => {
-          try {
-            const recv = JSON.parse(event.data);
-            // forward all fields from server, adding current status
-            const out = Object.assign({}, recv, { status: statusString(ws) });
-            postMessage(out);
-          } catch (err) {
-            error("invalid JSON from server");
-          }
-        };
-
-        ws.onerror = (err) => {
-          error(
-            "WebSocket error: " +
-              (err && err.message ? err.message : String(err))
-          );
-        };
-
-        ws.onclose = (e) => {
-          error(
-            "WebSocket closed: code " +
-              (e.code || "unknown") +
-              " reason " +
-              (e.reason || "")
-          );
-        };
-      } catch (err) {
-        error(err.message);
-      }
+      retryDelay = 1000; // Reset retry delay
+      attemptConnection();
       break;
 
     case "stdin":

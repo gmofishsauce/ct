@@ -176,20 +176,33 @@ export class ServerConnection {
 
     handleMessage(msg) {
         switch (msg.type) {
-        case "started":
+        case "opened":
+            // WebSocket successfully opened - transition to connected and flush queue
             if (this.commState == STATE_OPENING) {
                 this.commState = STATE_CONNECTED;
+                commdbg(COMMDB_LOW, "WebSocket opened, flushing message queue");
+                this.flushQueue();
+            } else {
+                commdbg(COMMDB_LOW, "unexpected OPENED message from worker ignored");
+            }
+            break;
+        case "started":
+            // Stockfish process started - send initial UCI command
+            if (this.commState == STATE_CONNECTED) {
                 this.outbound.enqueue("uci");
+                this.trySend();
             } else {
                 commdbg(COMMDB_LOW, "unexpected STARTED message from server ignored");
             }
             break;
         case "error":
             commdbg(COMMDB_LOW, `error from server: ${msg.error}`);
-            if (this.commState == STATE_OPENING) {
-                // do nothing; the transmit side will try again soon.
-            } else if (this.commState == STATE_CONNECTED) {
-                this.commState = STATE_DEAD;
+            if (this.commState == STATE_CONNECTED) {
+                // Connection errors will trigger worker retry, but if we're connected
+                // and get an error from the server itself, that's fatal
+                if (msg.error && !msg.error.includes("WebSocket")) {
+                    this.commState = STATE_DEAD;
+                }
             }
             break;
         case "stdout":
@@ -209,6 +222,20 @@ export class ServerConnection {
         this.setStatus();
     }
 
+    // Send all queued messages if connected
+    trySend() {
+        while (this.commState === STATE_CONNECTED && !this.outbound.isEmpty()) {
+            const msg = this.outbound.dequeue();
+            commdbg(COMMDB_ALL, `sending: "${msg}"`);
+            this.worker.postMessage({ type: "stdin", data: msg });
+        }
+    }
+
+    // Alias for trySend() - used when connection first opens
+    flushQueue() {
+        this.trySend();
+    }
+
     startEngine(fen) {
         this.outbound.enqueue("stop");
         this.outbound.enqueue("isready");
@@ -216,11 +243,13 @@ export class ServerConnection {
         this.outbound.enqueue("isready");
         this.outbound.enqueue("position fen " + fen);
         this.outbound.enqueue("go infinite");
+        this.trySend(); // Send immediately if connected
     }
 
     stop() {
         this.outbound.enqueue("stop");
         this.outbound.enqueue("isready");
+        this.trySend(); // Send immediately if connected
     }
 
     // TODO for a major efficiency optimization, reduce
@@ -230,49 +259,15 @@ export class ServerConnection {
     move(fen) {
         this.outbound.enqueue("position fen " + fen);
         this.outbound.enqueue("go infinite");
-    }
-
-    doNet() {
-        commdbg(COMMDB_ALL, "doNet()");
-        let delay = 537;
-        switch (this.commState) {
-            case STATE_START:
-                // Ask the worker to open the connection and give it a couple of seconds.
-                this.worker.postMessage({ type: "open", baseUrl: "http://localhost:8080" });
-                this.commState = STATE_OPENING;
-                delay = 1917;
-                break;
-            case STATE_OPENING:
-                // It's been a couple of seconds and the connection has not opened.
-                // Come back here pretty soon and try again. There's a race here where
-                // if the connection completes during the short time window we're back
-                // in the START state, the worker will create a second connection. I
-                // should fix this.
-                this.commState = STATE_START;
-                delay = 3;
-                break;
-            case STATE_CONNECTED:
-                // Normal state. If there's a message to Stockfish, send it.
-                if (!this.outbound.isEmpty()) {
-                    this.worker.postMessage({ type: "stdin", data: this.outbound.dequeue() });
-                }
-                break;
-            case STATE_DEAD:
-                // There's no way out of the DEAD state except a page refresh.
-                delay = 30*1000*1000;
-                break;
-            default:
-                commdbg(COMMDB_NONE, `unknown commState ${this.commState}`);
-                break;
-        }
-
-        this.setStatus();
-        setTimeout(() => this.doNet(), delay);
+        this.trySend(); // Send immediately if connected
     }
 
     start() {
         commdbg(COMMDB_LOW, "start()");
-        setTimeout(() => this.doNet(), 1453);
+        // Initiate connection immediately (worker will retry on failure)
+        this.commState = STATE_OPENING;
+        this.worker.postMessage({ type: "open", baseUrl: "http://localhost:8080" });
+        this.setStatus();
     }
 }
 
