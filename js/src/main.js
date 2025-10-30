@@ -4,8 +4,6 @@ import * as comms from "./comms.js";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import * as position from "./board.js";
 
-// TODO black and white indication in the hexcyl display
-
 // See https://www.redblobgames.com/grids/hexagons/
 // These are axial coordinates [q, r] with s derived.
 
@@ -76,8 +74,6 @@ const maxScale = 1.95;
 const cylGeometry = new THREE.CylinderGeometry(1, 1, neutralHeight, 6);
 const labelGeometry = new THREE.CircleGeometry(1, 64); // round disk for label
 
-// TODO indicate color {black, white} of each move. Currently best
-// idea is to color the move text black or white.
 function makeDynamicLabelTexture(text) {
   const size = 256;
   const canvas = document.createElement("canvas");
@@ -215,7 +211,6 @@ function unfreezeAll() {
   });
 }
 
-// TODO northeast-priority ordering
 function makeActive(hexcyl) {
   activeKeys.push(hexcyl);
   updateView(activeKeys.length-1, 0.0, keyFor(hexcyl.qrVec));
@@ -438,7 +433,6 @@ document.getElementById("c").addEventListener("click", (e) => {
     position.chess.move(picked.label);
   } catch (err) {
     // User probably clicked on a random hexcyl
-    // TODO cancel highlighting of hexcyl
     dbg(`illegal move to ${newCenter.label} ignored`);
     return;
   }
