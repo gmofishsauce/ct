@@ -59,109 +59,237 @@ function newCameraControls() {
 
 const cameraControls = newCameraControls();
 
-// The "base height" of the hexagonal cylinders is their height when the
-// move evaluation is 0 centipawns (neither positive nor negative for the
-// player). The scaling range runs from 0.05 (cylinder's height is 5% of
-// neutralHeight) to 2.45 (245% of neutralHeight). Actual scales converge
-// by 0.01 per frame to target scales so the cylinder heights change smoothly
-// as the evaluation proceeds. We initialize so that the cylinders grow
-// toward the neutral height during initialization.
-const neutralHeight = 3.0;
-const neutralScale = 1.0;
-const minScale = 0.05;
-const maxScale = 1.95;
+// === Hexcyl Class ===
+// Encapsulates a labeled hexagonal cylinder with position, animation state,
+// and visual properties. Replaces the previous nameless object type.
 
-const cylGeometry = new THREE.CylinderGeometry(1, 1, neutralHeight, 6);
-const labelGeometry = new THREE.CircleGeometry(1, 64); // round disk for label
+class Hexcyl {
+  // Static constants
+  static NEUTRAL_HEIGHT = 3.0;
+  static NEUTRAL_SCALE = 1.0;
+  static MIN_SCALE = 0.05;
+  static MAX_SCALE = 1.95;
+  static DEFAULT_STEP_SIZE = 0.01;
 
-function makeDynamicLabelTexture(text) {
-  const size = 256;
-  const canvas = document.createElement("canvas");
-  canvas.width = size;
-  canvas.height = size;
-  const ctx = canvas.getContext("2d");
+  // Shared geometries (one per class, not per instance)
+  static #cylGeometry = new THREE.CylinderGeometry(1, 1, Hexcyl.NEUTRAL_HEIGHT, 6);
+  static #labelGeometry = new THREE.CircleGeometry(1, 64);
 
-  function update(newText) {
-    ctx.clearRect(0, 0, size, size);
-    // This probably isn't right ... we may create hexes not for the player on the move.
-    ctx.fillStyle = (position.chess.turn() == 'w') ? '#FFFFFF' : '#000000';
-    ctx.font = "48px sans-serif";
-    ctx.textAlign = "center";
-    ctx.textBaseline = "middle";
-    ctx.fillText(newText, size / 2, size / 2);
-    texture.needsUpdate = true;
+  // Private instance fields
+  #qrVec;           // [q, r] axial coordinates (immutable)
+  #group;           // THREE.Group (root container)
+  #cylMesh;         // THREE.Mesh (cylinder)
+  #cylMaterial;     // THREE.MeshPhongMaterial
+  #labelMesh;       // THREE.Mesh (label disk)
+  #labelTexture;    // { texture, update } from makeDynamicLabelTexture
+  #targetScale;     // animation target
+  #actualScale;     // current scale value
+  #label;           // move notation (e.g., "e2e4")
+  #paused;          // activity state (whether updates are paused)
+
+  // Private constructor - use Hexcyl.create() instead
+  constructor(qrVec, initialLabel) {
+    this.#qrVec = [qrVec[0], qrVec[1]]; // defensive copy
+    this.#label = initialLabel;
+    this.#paused = false;
+    this.#targetScale = Hexcyl.NEUTRAL_SCALE;
+    this.#actualScale = Hexcyl.MIN_SCALE; // cylinders initially "grow" into scene
+
+    // Create THREE.js group and position it
+    this.#group = new THREE.Group();
+    const xyzVec = Hexcyl.#xyzPos(this.#qrVec);
+    this.#group.position.set(xyzVec[0], xyzVec[1], xyzVec[2]);
+    this.#group.name = "GROUP";
+    this.#group.userData.hexcyl = this; // back-reference for picking
+
+    // Create cylinder mesh
+    const color = utils.makeHexColor(0);
+    this.#cylMaterial = new THREE.MeshPhongMaterial({ color });
+    this.#cylMesh = new THREE.Mesh(Hexcyl.#cylGeometry, this.#cylMaterial);
+    this.#cylMesh.name = "CYL";
+    this.#group.add(this.#cylMesh);
+
+    // Create label mesh with dynamic texture
+    this.#labelTexture = Hexcyl.#makeDynamicLabelTexture(initialLabel);
+    const labelMaterial = new THREE.MeshBasicMaterial({
+      map: this.#labelTexture.texture,
+      transparent: true,
+      side: THREE.DoubleSide,
+    });
+    this.#labelMesh = new THREE.Mesh(Hexcyl.#labelGeometry, labelMaterial);
+    this.#labelMesh.rotation.x = 0;
+    this.#labelMesh.position.y = Hexcyl.NEUTRAL_HEIGHT / 2 + 0.2;
+    this.#labelMesh.name = "LABEL";
+    this.#group.add(this.#labelMesh);
   }
 
-  const texture = new THREE.CanvasTexture(canvas);
-  update(text);
+  // === STATIC FACTORY ===
 
-  return { texture, update };
-}
-
-// The hexcyl (a labeled hexagonal cylinder) is the fundamental graphical
-// object in this app. Each hexcyl has a color that varies over a gradient,
-// a label, a scalable height, and a position expressed in {q, r} axial
-// hexagonal coordinates, usually packaged as a qrVec which is an array
-// of length 2. This factory function is usually reached via requireHexcylAt()
-// which participates in the management strategy for these graphical objects.
-// The strategy is described in a later comment.
-
-function makeHexcyl(qrVec, text) {
-  const group = new THREE.Group();
-  const xyzVec = utils.xyzPos(qrVec);
-  group.position.set(xyzVec[0], xyzVec[1], xyzVec[2]);
-  group.name = "GROUP";
-
-  // Cylinder (unique material per cylinder)
-  const color = utils.makeHexColor(0);
-  const cylMaterial = new THREE.MeshPhongMaterial({ color });
-  const cylMesh = new THREE.Mesh(cylGeometry, cylMaterial);
-  cylMesh.name = "CYL"; // used in PickHelper
-  group.add(cylMesh);
-
-  // Label (unique material + texture per label)
-  const dynamicLabel = makeDynamicLabelTexture(text);
-  const labelMaterial = new THREE.MeshBasicMaterial({
-    map: dynamicLabel.texture,
-    transparent: true,
-    side: THREE.DoubleSide,
-  });
-  const labelMesh = new THREE.Mesh(labelGeometry, labelMaterial);
-  labelMesh.rotation.x = 0;
-  labelMesh.position.y = neutralHeight / 2 + 0.2;
-  labelMesh.name = "LABEL";
-  group.add(labelMesh);
-
-  // --- API: update height ---
-  function updateHeight(scaleY) {
-    cylMesh.scale.y = scaleY;
-    cylMesh.position.y = neutralHeight * (scaleY / 2) - neutralHeight / 2;
-    labelMesh.position.y = neutralHeight * scaleY - neutralHeight / 2 + 0.2;
+  static create(qrVec, label) {
+    return new Hexcyl(qrVec, label);
   }
 
-  // Return group plus handles for updates
-  // XXX FIXME this design is ridiculous. It was proposed by an AI as a
-  // graphics example, and one thing led to another. All these properties
-  // should be on the Three.js group object and this nameless return type
-  // should not even exist. N.B. - the PickHelper in utils.js identifies
-  // the group when it's clicked, and the .owner is required to get back
-  // to the qrVec of the selected group. Bogus. Hopefully I can get an AI
-  // to refactor the entire code base to get rid of this thing.
-  const result = {
-    group, // add to scene
-    cylMesh, // access mesh
-    cylMaterial, // change color
-    labelMesh, // access label mesh
-    updateLabel: dynamicLabel.update,
-    updateHeight, // change height
-    targetScale: neutralScale,
-    actualScale: minScale, // cylinders initially "grow" into the scene
-    frozen: false,
-    label: text,
-    qrVec,
-  };
-  group.owner = result;
-  return result;
+  static fromGroup(group) {
+    return group?.userData?.hexcyl || null;
+  }
+
+  // === GETTERS (read-only access) ===
+
+  get qrVec() {
+    return [this.#qrVec[0], this.#qrVec[1]]; // return copy
+  }
+
+  get q() {
+    return this.#qrVec[0];
+  }
+
+  get r() {
+    return this.#qrVec[1];
+  }
+
+  get group() {
+    return this.#group;
+  }
+
+  get label() {
+    return this.#label;
+  }
+
+  get isPaused() {
+    return this.#paused;
+  }
+
+  get targetScale() {
+    return this.#targetScale;
+  }
+
+  get actualScale() {
+    return this.#actualScale;
+  }
+
+  // === PUBLIC METHODS ===
+
+  setLabel(newLabel) {
+    this.#label = newLabel;
+    this.#labelTexture.update(newLabel);
+    return this;
+  }
+
+  setColor(pawnValue) {
+    const color = utils.makeHexColor(pawnValue);
+    this.#cylMaterial.color.setStyle(color);
+    return this;
+  }
+
+  setTargetScale(scale) {
+    this.#targetScale = scale;
+    return this;
+  }
+
+  // Combined operation: set label, color, and target scale based on evaluation
+  setEvaluation(pawnValue, moveName) {
+    this.setLabel(moveName);
+    this.setColor(pawnValue);
+    this.#targetScale = this.#boundScale(pawnValue);
+    return this;
+  }
+
+  // Animation: converge actual scale toward target scale
+  // Returns true if still animating, false if complete
+  convergeScale(stepSize = Hexcyl.DEFAULT_STEP_SIZE) {
+    const diff = this.#targetScale - this.#actualScale;
+    if (Math.abs(diff) > stepSize + 0.001) {
+      if (diff > 0) {
+        this.#actualScale += stepSize;
+      } else {
+        this.#actualScale -= stepSize;
+      }
+      this.#updateHeight(this.#actualScale);
+      return true;
+    }
+    return false;
+  }
+
+  pause() {
+    this.#paused = true;
+    return this;
+  }
+
+  resume() {
+    this.#paused = false;
+    return this;
+  }
+
+  isInScene() {
+    return this.#group.parent !== null;
+  }
+
+  addToScene(scene) {
+    scene.add(this.#group);
+    return this;
+  }
+
+  removeFromScene() {
+    this.#group.parent?.remove(this.#group);
+    return this;
+  }
+
+  lookAtCamera(cameraPosition) {
+    this.#labelMesh.lookAt(cameraPosition);
+    return this;
+  }
+
+  // === PRIVATE HELPERS ===
+
+  #updateHeight(scaleY) {
+    this.#cylMesh.scale.y = scaleY;
+    this.#cylMesh.position.y = Hexcyl.NEUTRAL_HEIGHT * (scaleY / 2) - Hexcyl.NEUTRAL_HEIGHT / 2;
+    this.#labelMesh.position.y = Hexcyl.NEUTRAL_HEIGHT * scaleY - Hexcyl.NEUTRAL_HEIGHT / 2 + 0.2;
+  }
+
+  #boundScale(pawnValue) {
+    if (pawnValue < -5.0) pawnValue = -5.0;
+    if (pawnValue > 5.0) pawnValue = 5.0;
+    let result = Hexcyl.NEUTRAL_SCALE + pawnValue / 5.0;
+    if (result < Hexcyl.MIN_SCALE) result = Hexcyl.MIN_SCALE;
+    if (result > Hexcyl.MAX_SCALE) result = Hexcyl.MAX_SCALE;
+    return result;
+  }
+
+  // === STATIC PRIVATE HELPERS ===
+
+  static #xyzPos(qrVec) {
+    const sqrt3 = Math.sqrt(3);
+    const s3ov2 = sqrt3 / 2;
+    const t3ov2 = 3 / 2;
+    const x = sqrt3 * qrVec[0] + s3ov2 * qrVec[1];
+    const z = t3ov2 * qrVec[1];
+    return [x, 0.0, z];
+  }
+
+  static #makeDynamicLabelTexture(text) {
+    const size = 256;
+    const canvas = document.createElement("canvas");
+    canvas.width = size;
+    canvas.height = size;
+    const ctx = canvas.getContext("2d");
+
+    function update(newText) {
+      ctx.clearRect(0, 0, size, size);
+      // This probably isn't right ... we may create hexes not for the player on the move.
+      ctx.fillStyle = (position.chess.turn() == 'w') ? '#FFFFFF' : '#000000';
+      ctx.font = "48px sans-serif";
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.fillText(newText, size / 2, size / 2);
+      texture.needsUpdate = true;
+    }
+
+    const texture = new THREE.CanvasTexture(canvas);
+    update(text);
+
+    return { texture, update };
+  }
 }
 
 // Hexcyl management. The user must begin by entering a starting position
@@ -178,7 +306,7 @@ function makeHexcyl(qrVec, text) {
 // logical center. Previously-invisible hexcyls become the new active set.
 //
 // So hexcyls have three possible states: (1) active and visible in the
-// scene, (2) inactive (frozen) and visible because the center has moved
+// scene, (2) inactive (paused) and visible because the center has moved
 // away from them, (3) not visible in the scene, eligible for reclaiming,
 // and not active. State transitions are creation => (1), (1) => (3) and
 // (2) => (3) when Go button pressed and all hexcyls are removed from the
@@ -193,21 +321,21 @@ function keyFor(qrVec) {
 }
 
 // Called when the terrain is expanded by clicking on a hexcyl.
-// Freezes all the hexcyls in the terrain. Only newly-added ones
-// are active (not frozen). Note: labels of frozen state (1)
+// Pauses all the hexcyls in the terrain. Only newly-added ones
+// are active (not paused). Note: labels of paused state (1)
 // (meaning "visible") hexcyls still rotate to point at the cam.
-function freezeAll() {
+function pauseAll() {
   hexcyls.forEach((hexcyl) => {
-    hexcyl.frozen = true;
+    hexcyl.pause();
   });
 }
 
 // Called when the Go button is clicked on a new FEN string and
 // the scene is cleared. Ensures that hexcyls reclaimed from the
-// hexcyls map will not be frozen when reclaimed.
-function unfreezeAll() {
+// hexcyls map will not be paused when reclaimed.
+function resumeAll() {
   hexcyls.forEach((hexcyl) => {
-    hexcyl.frozen = false;
+    hexcyl.resume();
   });
 }
 
@@ -232,27 +360,18 @@ function requireHexcylAt(qrVec) {
     } else {
       // state (1) => (2)
       // Click handler should have cleared activeKeys
-      // TODO visual indication of "frozen" state
+      // TODO visual indication of "paused" state
       utils.dbg(`STATE ${keyFor(result.qrVec)} (1)=>(2)`);
     }
     return result;
   }
 
   // creation => state(1)
-  const result = makeHexcyl(qrVec, k);
+  const result = Hexcyl.create(qrVec, k);
   utils.dbg(`STATE ${keyFor(result.qrVec)} creation=>(1)`);
   hexcyls.set(k, result);
   scene.add(result.group);
   makeActive(result);
-  return result;
-}
-
-function boundScale(pawnValue) {
-  if (pawnValue < -5.0) pawnValue = -5.0;
-  if (pawnValue >  5.0) pawnValue = 5.0;
-  let result = neutralScale + pawnValue / 5.0;
-  if (result < minScale) result = minScale;
-  if (result > maxScale) result = maxScale;
   return result;
 }
 
@@ -269,11 +388,8 @@ function updateView(index, value, name) {
   }
 
   const hex = activeKeys[index];
-  if (hex && !hex.frozen) {
-    hex.label = name; // XXX TODO FIXME another sign of screwed-up object structure
-    hex.updateLabel(name);
-    hex.cylMaterial.color.setStyle(utils.makeHexColor(value));
-    hex.targetScale = boundScale(value);
+  if (hex && !hex.isPaused) {
+    hex.setEvaluation(value, name);
   }
 }
 
@@ -304,21 +420,13 @@ function main() {
   function render(time) {
     // Every frame converges the bars on the targets by small steps
     activeKeys.forEach((hexcyl) => {
-      let diff = hexcyl.targetScale - hexcyl.actualScale;
-      if (Math.abs(diff) > 0.011) {
-        if (diff > 0) {
-          hexcyl.actualScale += 0.01;
-        } else {
-          hexcyl.actualScale -= 0.01;
-        }
-        hexcyl.updateHeight(hexcyl.actualScale);
-      }
+      hexcyl.convergeScale();
     });
 
     if (cameraPositionChanged) {
-      hexcyls.forEach ((hexcyl) => {
-        if (hexcyl.group.parent) { // it's in the scene
-          hexcyl.labelMesh.lookAt(cam.position);
+      hexcyls.forEach((hexcyl) => {
+        if (hexcyl.isInScene()) {
+          hexcyl.lookAtCamera(cam.position);
         }
       });
     }
@@ -347,7 +455,7 @@ function hardRestart() {
     utils.dbg(`STATE ${k} (1),(2)=>(3)`);
     scene.remove(v.group);
   }
-  unfreezeAll();
+  resumeAll();
   basisVectors.forEach((qrVec) => {
     // including [0, 0] ... this is how
     // the center hexcyl comes into existence:
@@ -363,11 +471,11 @@ function hardRestart() {
 function softRestart(newCenter) {
   primaryServer.stop();
   activeKeys = [];
-  freezeAll();
+  pauseAll();
   activeKeys.push(newCenter);
 
   // Now add in the new hexcyls that will expand the terrain
-  // These will be the only unfrozen hexcyls in the entire terrain.
+  // These will be the only unpaused hexcyls in the entire terrain.
   // Have to skip basisVectors[0] which is [0, 0].
   for (let i = 1; i < basisVectors.length; i++) {
     let bv = basisVectors[i];
@@ -479,10 +587,7 @@ function positionChangedHandler(evt) {
 
   utils.dbg(`position changed: case 3 (repurpose a hex)`);
   newCenter = activeKeys[1];
-  newCenter.label = label; // XXX TODO FIXME another sign of screwed-up object structure
-  newCenter.updateLabel(label);
-  newCenter.cylMaterial.color.setStyle(utils.makeHexColor(0.0));
-  newCenter.targetScale = boundScale(0.0);
+  newCenter.setEvaluation(0.0, label);
   softRestart(newCenter);
 }
 

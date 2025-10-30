@@ -117,12 +117,13 @@ export class PickHelper {
       }
     }
 
-    // Return the picked object
+    // Return the picked object (Hexcyl instance)
     if (picked == null) {
       return null;
     }
     if (picked.name == "CYL" && picked.parent && picked.parent.name == "GROUP") {
-      return picked.parent.owner;
+      // Return the Hexcyl instance from userData (set during construction)
+      return picked.parent.userData.hexcyl;
     }
     dbg("unexpected non-null picked object:");
     dbobj(picked);
