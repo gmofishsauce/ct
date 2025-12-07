@@ -185,6 +185,7 @@ func envOr(key, def string) string {
 
 // wsRunHandler upgrades to WS, starts the preconfigured CLI, streams stdout/stderr, accepts stdin, and reports exit.
 func wsRunHandler(w http.ResponseWriter, r *http.Request, cfg serverConfig) {
+	fmt.Printf("ENTER wsRunHander: cfg.cmdPath is %v\n",  cfg.CommandPath)
 	var upgrader = websocket.Upgrader{
 		ReadBufferSize:  32 * 1024,
 		WriteBufferSize: 32 * 1024,
@@ -204,7 +205,7 @@ func wsRunHandler(w http.ResponseWriter, r *http.Request, cfg serverConfig) {
     defer cancel()
 
     cmd := exec.CommandContext(ctx, cfg.CommandPath, cfg.FixedArgs...)
-
+	fmt.Printf("cfg.cmdPath is %v\n",  cfg.CommandPath)
     stdin, err := cmd.StdinPipe()
     if err != nil { sendJSON(conn, map[string]any{"type":"error","error":"stdin pipe error"}); return }
     stdout, err := cmd.StdoutPipe()
