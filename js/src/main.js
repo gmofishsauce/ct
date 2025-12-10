@@ -74,6 +74,7 @@ class Hexcyl {
   // Shared geometries (one per class, not per instance)
   static #cylGeometry = new THREE.CylinderGeometry(1, 1, Hexcyl.NEUTRAL_HEIGHT, 6);
   static #labelGeometry = new THREE.CircleGeometry(1, 64);
+  static #markerGeometry = new THREE.CircleGeometry(0.8, 64);
 
   // Private instance fields
   #qrVec;           // [q, r] axial coordinates (immutable)
@@ -82,6 +83,7 @@ class Hexcyl {
   #cylMaterial;     // THREE.MeshPhongMaterial
   #labelMesh;       // THREE.Mesh (label disk)
   #labelTexture;    // { texture, update } from makeDynamicLabelTexture
+  #markerMesh;      // THREE.Mesh (gold marker for played moves)
   #targetScale;     // animation target
   #actualScale;     // current scale value
   #label;           // move notation (e.g., "e2e4")
@@ -121,6 +123,20 @@ class Hexcyl {
     this.#labelMesh.position.y = Hexcyl.NEUTRAL_HEIGHT / 2 + 0.2;
     this.#labelMesh.name = "LABEL";
     this.#group.add(this.#labelMesh);
+
+    // Create marker mesh (gold disc for played moves)
+    const markerMaterial = new THREE.MeshBasicMaterial({
+      color: 0xFFD700, // gold color
+      transparent: true,
+      opacity: 0.8,
+      side: THREE.DoubleSide,
+    });
+    this.#markerMesh = new THREE.Mesh(Hexcyl.#markerGeometry, markerMaterial);
+    this.#markerMesh.rotation.x = Math.PI / 2; // lay flat on top
+    this.#markerMesh.position.y = Hexcyl.NEUTRAL_HEIGHT / 2 + 0.05;
+    this.#markerMesh.name = "MARKER";
+    this.#markerMesh.visible = false; // initially hidden
+    this.#group.add(this.#markerMesh);
   }
 
   // === STATIC FACTORY ===
@@ -220,6 +236,16 @@ class Hexcyl {
     return this;
   }
 
+  markAsPlayed() {
+    this.#markerMesh.visible = true;
+    return this;
+  }
+
+  unmarkAsPlayed() {
+    this.#markerMesh.visible = false;
+    return this;
+  }
+
   isInScene() {
     return this.#group.parent !== null;
   }
@@ -245,6 +271,7 @@ class Hexcyl {
     this.#cylMesh.scale.y = scaleY;
     this.#cylMesh.position.y = Hexcyl.NEUTRAL_HEIGHT * (scaleY / 2) - Hexcyl.NEUTRAL_HEIGHT / 2;
     this.#labelMesh.position.y = Hexcyl.NEUTRAL_HEIGHT * scaleY - Hexcyl.NEUTRAL_HEIGHT / 2 + 0.2;
+    this.#markerMesh.position.y = Hexcyl.NEUTRAL_HEIGHT * scaleY - Hexcyl.NEUTRAL_HEIGHT / 2 + 0.05;
   }
 
   #boundScale(pawnValue) {
@@ -356,21 +383,26 @@ function requireHexcylAt(qrVec) {
     if (result.group.parent == null) {
       // state (3) => (1)
       // Reset to neutral state when reclaiming
-      result.setEvaluation(0.0, k);
+      // Use "..." as placeholder - engine will set proper move notation
+      result.setEvaluation(0.0, "...");
+      result.unmarkAsPlayed();
       scene.add(result.group);
       makeActive(result);
       utils.dbg(`STATE ${keyFor(result.qrVec)} (3)=>(1)`);
     } else {
-      // state (1) => (2)
-      // Click handler should have cleared activeKeys
-      // TODO visual indication of "paused" state
-      utils.dbg(`STATE ${keyFor(result.qrVec)} (1)=>(2)`);
+      // state (2) => (1) - already visible (paused), being repurposed for new analysis
+      // Reset to neutral state and add to activeKeys so engine can update it
+      // Keep gold marker if present (preserves move path history)
+      result.setEvaluation(0.0, "...");
+      makeActive(result);
+      utils.dbg(`STATE ${keyFor(result.qrVec)} (2)=>(1)`);
     }
     return result;
   }
 
   // creation => state(1)
-  const result = Hexcyl.create(qrVec, k);
+  // Use "..." as placeholder - engine will set proper move notation
+  const result = Hexcyl.create(qrVec, "...");
   utils.dbg(`STATE ${keyFor(result.qrVec)} creation=>(1)`);
   hexcyls.set(k, result);
   scene.add(result.group);
@@ -464,6 +496,26 @@ function hardRestart() {
     // the center hexcyl comes into existence:
     requireHexcylAt(qrVec);
   });
+
+  // Label and mark the center hexcyl appropriately
+  const centerHexcyl = hexcyls.get("0-0");
+  if (centerHexcyl) {
+    const startingFen = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
+    if (currentFen === startingFen) {
+      centerHexcyl.setLabel("start");
+    } else {
+      // Try to get the last move from chess history
+      const history = position.chess.history({ verbose: true });
+      if (history.length > 0) {
+        const lastMove = history[history.length - 1];
+        centerHexcyl.setLabel(lastMove.from + lastMove.to);
+      } else {
+        centerHexcyl.setLabel("start");
+      }
+    }
+    centerHexcyl.markAsPlayed();
+  }
+
   primaryServer.startEngine(currentFen);
 }
 
@@ -477,6 +529,7 @@ function softRestart(newCenter) {
   pauseAll();
   activeKeys.push(newCenter);
   newCenter.resume(); // Unpause the center hexcyl
+  newCenter.markAsPlayed(); // Mark as a played move
 
   // Now add in the new hexcyls that will expand the terrain
   // These will be the only unpaused hexcyls in the entire terrain.
