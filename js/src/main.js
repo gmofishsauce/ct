@@ -341,7 +341,8 @@ function resumeAll() {
 
 function makeActive(hexcyl) {
   activeKeys.push(hexcyl);
-  updateView(activeKeys.length-1, 0.0, keyFor(hexcyl.qrVec));
+  // Don't set label here - let engine analysis set proper move notation
+  // updateView(activeKeys.length-1, 0.0, keyFor(hexcyl.qrVec));
 }
 
 function requireHexcylAt(qrVec) {
@@ -354,6 +355,8 @@ function requireHexcylAt(qrVec) {
     }
     if (result.group.parent == null) {
       // state (3) => (1)
+      // Reset to neutral state when reclaiming
+      result.setEvaluation(0.0, k);
       scene.add(result.group);
       makeActive(result);
       utils.dbg(`STATE ${keyFor(result.qrVec)} (3)=>(1)`);
@@ -453,7 +456,7 @@ function hardRestart() {
   activeKeys = [];
   for (const [k, v] of hexcyls) {
     utils.dbg(`STATE ${k} (1),(2)=>(3)`);
-    scene.remove(v.group);
+    v.removeFromScene();
   }
   resumeAll();
   basisVectors.forEach((qrVec) => {
@@ -473,6 +476,7 @@ function softRestart(newCenter) {
   activeKeys = [];
   pauseAll();
   activeKeys.push(newCenter);
+  newCenter.resume(); // Unpause the center hexcyl
 
   // Now add in the new hexcyls that will expand the terrain
   // These will be the only unpaused hexcyls in the entire terrain.
@@ -480,10 +484,8 @@ function softRestart(newCenter) {
   for (let i = 1; i < basisVectors.length; i++) {
     let bv = basisVectors[i];
     let qr = [ newCenter.qrVec[0]+bv[0], newCenter.qrVec[1]+bv[1] ];
-    let key = keyFor(qr);
-    if (!hexcyls.has(key)) {
-      requireHexcylAt(qr);
-    }
+    const newHex = requireHexcylAt(qr);
+    newHex.resume(); // Ensure newly created/reclaimed hexcyls are unpaused
   }
 
   currentFen = position.chess.fen();
@@ -504,6 +506,9 @@ function doGoClick() {
     return;
   }
   currentFen = proposedFen;
+  position.chess.load(currentFen);
+  utils.dbg("doGoClick:position loaded");
+  position.board.setPosition(currentFen);
   hardRestart();
 }
 
@@ -536,12 +541,18 @@ document.getElementById("c").addEventListener("click", (e) => {
   if (picked == null || picked == activeKeys[0]) {
     return;
   }
+  // Check if label looks like a valid move (e.g., "e2e4" not "1--1")
+  // Valid moves are 4-5 characters like "e2e4" or "e7e8q" (with promotion)
+  if (!picked.label || picked.label.length < 4 || picked.label.length > 5) {
+    utils.dbg(`hexcyl label "${picked.label}" doesn't look like a valid move, ignoring click`);
+    return;
+  }
   // OK, the user clicked on live hexcyl to expand from that point.
   try {
     position.chess.move(picked.label);
   } catch (err) {
     // User probably clicked on a random hexcyl
-    dbg(`illegal move to ${newCenter.label} ignored`);
+    utils.dbg(`illegal move to ${picked.label} ignored`);
     return;
   }
 
