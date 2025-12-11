@@ -24,6 +24,18 @@ const scene = new THREE.Scene();
 let primaryServer = null;
 let currentFen = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1" // start
 
+// PGN Playback state
+let pgnPlaybackState = {
+  isPlaying: false,           // Currently playing back?
+  moves: [],                  // Array of move objects from Chess.js history
+  currentMoveIndex: 0,        // Which move we're on
+  totalMoves: 0,              // Total number of moves
+  intervalId: null,           // setInterval timer ID
+  filename: '',               // Name of loaded PGN file
+  savedFen: '',               // FEN to restore after playback if interrupted
+  savedActionText: ''         // Action text to restore after playback if interrupted
+};
+
 function lights() {
   const lightColor = 0xffffff;
   let lightIntensity = 2;
@@ -563,10 +575,179 @@ function softRestart(newCenter) {
   primaryServer.move(currentFen);
 }
 
+// PGN Playback Functions
+
+function handlePgnFileSelect(event) {
+  const file = event.target.files[0];
+  if (!file) {
+    return;
+  }
+
+  const reader = new FileReader();
+  reader.onload = function(e) {
+    const pgnText = e.target.result;
+    loadAndStartPgnPlayback(pgnText, file.name);
+  };
+  reader.onerror = function() {
+    alert(`Error reading file: ${file.name}`);
+  };
+  reader.readAsText(file);
+}
+
+function loadAndStartPgnPlayback(pgnText, filename) {
+  // Save current state
+  pgnPlaybackState.savedFen = currentFen;
+  pgnPlaybackState.savedActionText = actionText.value;
+
+  // Reset chess engine and try to parse PGN
+  position.chess.reset();
+  try {
+    position.chess.loadPgn(pgnText);
+  } catch (error) {
+    alert(`Invalid PGN file: ${filename}\n${error.message}`);
+    return;
+  }
+
+  // Extract moves
+  pgnPlaybackState.moves = position.chess.history({ verbose: true });
+  if (pgnPlaybackState.moves.length === 0) {
+    alert(`PGN file contains no moves: ${filename}`);
+    return;
+  }
+
+  // Store filename and total moves
+  pgnPlaybackState.filename = filename;
+  pgnPlaybackState.totalMoves = pgnPlaybackState.moves.length;
+
+  utils.dbg(`Loaded PGN: ${filename} with ${pgnPlaybackState.totalMoves} moves`);
+
+  // Start playback
+  startPgnPlayback();
+}
+
+function startPgnPlayback() {
+  // Reset chess to starting position
+  position.chess.reset();
+
+  // Disable manual board input
+  position.board.disableMoveInput();
+
+  // Set board to starting position
+  position.board.setPosition(position.chess.fen());
+
+  // Update currentFen
+  currentFen = position.chess.fen();
+
+  // Reset terrain and start analysis on starting position
+  hardRestart();
+
+  // Initialize playback state
+  pgnPlaybackState.currentMoveIndex = 0;
+  pgnPlaybackState.isPlaying = true;
+
+  // Start interval timer (4000ms = 4 seconds)
+  pgnPlaybackState.intervalId = setInterval(playNextMove, 4000);
+
+  utils.dbg(`Started PGN playback: ${pgnPlaybackState.filename}`);
+}
+
+function playNextMove() {
+  // Check if we've played all moves
+  if (pgnPlaybackState.currentMoveIndex >= pgnPlaybackState.totalMoves) {
+    stopPgnPlayback(false);
+    return;
+  }
+
+  // Get next move
+  const move = pgnPlaybackState.moves[pgnPlaybackState.currentMoveIndex];
+
+  // Execute move on chess engine
+  position.chess.move(move.san);
+
+  // Update board visual
+  position.board.setPosition(position.chess.fen(), true);
+
+  // Update progress display
+  actionText.value = `Playing: ${pgnPlaybackState.filename} (move ${pgnPlaybackState.currentMoveIndex + 1}/${pgnPlaybackState.totalMoves})`;
+
+  // Update currentFen
+  currentFen = position.chess.fen();
+
+  // Trigger terrain update - match the move to an active hexcyl
+  const moveLabel = move.from + move.to;
+
+  // Try to find matching hexcyl in active keys
+  let matchingHexcyl = null;
+  for (const hexcyl of activeKeys) {
+    if (hexcyl.label === moveLabel) {
+      matchingHexcyl = hexcyl;
+      break;
+    }
+  }
+
+  if (matchingHexcyl) {
+    // Move matches an active hexcyl - expand from it
+    utils.dbg(`PGN playback: move ${moveLabel} matches active hexcyl`);
+    softRestart(matchingHexcyl);
+  } else {
+    // Move doesn't match - repurpose a hexcyl (like positionChangedHandler case 3)
+    utils.dbg(`PGN playback: move ${moveLabel} doesn't match, repurposing hexcyl`);
+    if (activeKeys.length < 2) {
+      utils.dbg(`PGN playback: not enough active hexcyls, skipping terrain update`);
+    } else {
+      const repurposedHexcyl = activeKeys[1];
+      repurposedHexcyl.setEvaluation(0.0, moveLabel);
+      softRestart(repurposedHexcyl);
+    }
+  }
+
+  // Increment move index
+  pgnPlaybackState.currentMoveIndex++;
+
+  utils.dbg(`Played move ${pgnPlaybackState.currentMoveIndex}/${pgnPlaybackState.totalMoves}: ${move.san}`);
+}
+
+function stopPgnPlayback(interrupted) {
+  // Clear interval timer
+  if (pgnPlaybackState.intervalId !== null) {
+    clearInterval(pgnPlaybackState.intervalId);
+    pgnPlaybackState.intervalId = null;
+  }
+
+  // Re-enable board input
+  position.start();
+
+  if (interrupted) {
+    // Restore saved position
+    position.chess.load(pgnPlaybackState.savedFen);
+    position.board.setPosition(pgnPlaybackState.savedFen);
+    actionText.value = pgnPlaybackState.savedActionText;
+    currentFen = pgnPlaybackState.savedFen;
+    hardRestart();
+    utils.dbg('PGN playback interrupted, restored previous position');
+  } else {
+    // Keep final position and update action text to show FEN
+    actionText.value = position.chess.fen();
+    utils.dbg('PGN playback completed');
+  }
+
+  // Reset playback state
+  pgnPlaybackState.isPlaying = false;
+  pgnPlaybackState.moves = [];
+  pgnPlaybackState.currentMoveIndex = 0;
+  pgnPlaybackState.totalMoves = 0;
+  pgnPlaybackState.filename = '';
+}
+
 const goButton = document.getElementById("go");
 const actionText = document.getElementById("action");
 
 function doGoClick() {
+  if (pgnPlaybackState.isPlaying) {
+    alert("PGN playback is in progress. Press Escape to stop.");
+    return;
+  }
+
   const proposedFen = actionText.value;
   utils.dbg(`doGoClick: Input FEN: ${proposedFen}`);
   utils.dbg(`doGoClick: Turn indicator in input: ${proposedFen.split(' ')[1]}`);
@@ -605,6 +786,10 @@ function getCanvasRelativePosition(event) {
 }
 
 document.getElementById("c").addEventListener("click", (e) => {
+  if (pgnPlaybackState.isPlaying) {
+    return; // Ignore hexcyl clicks during playback
+  }
+
   // PickHelper.pick() returns the type-nameless hexcyl object.
   utils.dbg(`click ${e.clientX} ${e.clientY}`);
   const pos = getCanvasRelativePosition(e);
@@ -675,6 +860,26 @@ function positionChangedHandler(evt) {
   newCenter.setEvaluation(0.0, label);
   softRestart(newCenter);
 }
+
+// PGN Playback Event Listeners
+
+// Keyboard interrupt handler for Escape key
+document.addEventListener('keydown', function(event) {
+  if (event.key === 'Escape' && pgnPlaybackState.isPlaying) {
+    event.preventDefault();
+    stopPgnPlayback(true); // true = interrupted
+  }
+});
+
+// Load PGN button event handlers
+const loadPgnButton = document.getElementById('loadPgn');
+const pgnFileInput = document.getElementById('pgnFileInput');
+
+loadPgnButton.addEventListener('click', function() {
+  pgnFileInput.click(); // Trigger hidden file input
+});
+
+pgnFileInput.addEventListener('change', handlePgnFileSelect);
 
 // Finally, start me up.
 // XXX TODO call hardReset() here?
