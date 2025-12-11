@@ -307,7 +307,6 @@ class Hexcyl {
 
     function update(newText) {
       ctx.clearRect(0, 0, size, size);
-      // This probably isn't right ... we may create hexes not for the player on the move.
       ctx.fillStyle = (position.chess.turn() == 'w') ? '#FFFFFF' : '#000000';
       ctx.font = "48px sans-serif";
       ctx.textAlign = "center";
@@ -569,6 +568,8 @@ const actionText = document.getElementById("action");
 
 function doGoClick() {
   const proposedFen = actionText.value;
+  utils.dbg(`doGoClick: Input FEN: ${proposedFen}`);
+  utils.dbg(`doGoClick: Turn indicator in input: ${proposedFen.split(' ')[1]}`);
   const validator = position.validate(proposedFen);
   if (!validator.ok) {
     alert(`Invalid FEN: ${proposedFen}\n${validator.error}`);
@@ -576,9 +577,13 @@ function doGoClick() {
   }
   currentFen = proposedFen;
   position.chess.load(currentFen);
-  utils.dbg("doGoClick:position loaded");
+  utils.dbg(`doGoClick: After load, chess.turn()=${position.chess.turn()}`);
   position.board.setPosition(currentFen);
   hardRestart();
+  // Ensure text field stays synchronized with actual position
+  actionText.value = position.chess.fen();
+  utils.dbg(`doGoClick: Synchronized text field to: ${actionText.value}`);
+  utils.dbg(`doGoClick: Final turn: ${position.chess.turn()}`);
 }
 
 // "Hard" restart. Empty the terrain and the active set. Remove
