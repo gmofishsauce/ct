@@ -175,6 +175,10 @@ class Hexcyl {
     return this.#paused;
   }
 
+  get isMarkedAsPlayed() {
+    return this.#markerMesh.visible;
+  }
+
   get targetScale() {
     return this.#targetScale;
   }
@@ -534,9 +538,21 @@ function softRestart(newCenter) {
   // Now add in the new hexcyls that will expand the terrain
   // These will be the only unpaused hexcyls in the entire terrain.
   // Have to skip basisVectors[0] which is [0, 0].
+  // Also skip any positions that already contain played moves (preserve history)
   for (let i = 1; i < basisVectors.length; i++) {
     let bv = basisVectors[i];
     let qr = [ newCenter.qrVec[0]+bv[0], newCenter.qrVec[1]+bv[1] ];
+    let key = keyFor(qr);
+
+    // Check if this position already has a played move - if so, skip it
+    if (hexcyls.has(key)) {
+      const existingHex = hexcyls.get(key);
+      if (existingHex.isMarkedAsPlayed) {
+        utils.dbg(`Skipping ${key} - already part of move history`);
+        continue;
+      }
+    }
+
     const newHex = requireHexcylAt(qr);
     newHex.resume(); // Ensure newly created/reclaimed hexcyls are unpaused
   }
