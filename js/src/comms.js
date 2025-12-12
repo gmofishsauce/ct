@@ -205,6 +205,12 @@ export class ServerConnection {
                 }
             }
             break;
+        case "fatal_disconnect":
+            commdbg(COMMDB_LOW, `fatal disconnect: ${msg.message}`);
+            this.commState = STATE_DEAD;
+            this.setStatus();
+            alert(msg.message || "Server connection was lost. You must refresh the page.");
+            break;
         case "stdout":
             this.parseResponse(msg);
             break;

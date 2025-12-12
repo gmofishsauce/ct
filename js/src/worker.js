@@ -29,6 +29,7 @@ let ws = null;
 let baseUrl = "";
 let retryDelay = 1000; // Start with 1 second
 const maxRetryDelay = 30000; // Max 30 seconds
+let wasConnected = false;  // Track if we ever successfully connected
 
 // Post a debug message back to the main thread
 function dbg(msg) {
@@ -74,6 +75,7 @@ async function attemptConnection() {
 
     ws.onopen = () => {
       dbg("web socket opened");
+      wasConnected = true;  // Mark that we had a successful connection
       retryDelay = 1000; // Reset retry delay on successful connection
       postMessage({ type: "opened", status: statusString(ws) });
     };
@@ -94,7 +96,16 @@ async function attemptConnection() {
         "WebSocket error: " +
           (err && err.message ? err.message : String(err))
       );
-      scheduleRetry();
+
+      if (wasConnected) {
+        // Connection was established but dropped - fatal error
+        postMessage({
+          type: "fatal_disconnect",
+          message: "Server connection error. You must refresh the page."
+        });
+      } else {
+        scheduleRetry();
+      }
     };
 
     ws.onclose = (e) => {
@@ -104,7 +115,18 @@ async function attemptConnection() {
           " reason " +
           (e.reason || "")
       );
-      scheduleRetry();
+
+      if (wasConnected) {
+        // Connection was established but dropped - fatal error
+        postMessage({
+          type: "fatal_disconnect",
+          message: "Server connection was lost. You must refresh the page."
+        });
+        // DO NOT call scheduleRetry()
+      } else {
+        // Never connected, keep retrying
+        scheduleRetry();
+      }
     };
   } catch (err) {
     error(err.message);

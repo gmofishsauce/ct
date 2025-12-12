@@ -250,7 +250,20 @@ func wsRunHandler(w http.ResponseWriter, r *http.Request, cfg serverConfig) {
     go func() {
         for {
             mt, data, err := conn.ReadMessage()
-            if err != nil { cancel(); return }
+            if err != nil {
+                log.Printf("Client disconnected: %v - exiting server", err)
+                cancel()  // Cancel context to signal Stockfish to exit
+
+                // Defensive: give process 1 second to exit gracefully, then force kill
+                time.Sleep(1 * time.Second)
+                if cmd.Process != nil {
+                    log.Printf("Force killing Stockfish process %d", cmd.Process.Pid)
+                    _ = cmd.Process.Kill()
+                }
+
+                log.Printf("Exiting server")
+                os.Exit(0)
+            }
             if mt != websocket.TextMessage { cancel(); return }
 
             var msg map[string]any

@@ -54,7 +54,7 @@ function camera() {
   const fov = 60;
   const aspect = 2; // the canvas default
   const near = 0.1;
-  const far = 25;
+  const far = 100;
   const camera = new THREE.PerspectiveCamera(fov, aspect, near, far);
   camera.position.z = 15;
   return camera;
@@ -718,6 +718,8 @@ function stopPgnPlayback(interrupted) {
   position.start();
 
   if (interrupted) {
+    // Stop current analysis before restoring position
+    primaryServer.stop();
     // Restore saved position
     position.chess.load(pgnPlaybackState.savedFen);
     position.board.setPosition(pgnPlaybackState.savedFen);
