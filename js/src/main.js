@@ -498,6 +498,11 @@ function main() {
 // on a FEN provided by the user (or in the initial
 // position at startup time).
 function hardRestart() {
+  // Save old center position BEFORE clearing terrain
+  const oldCenterPos = hexcyls.has("0-0")
+    ? hexcyls.get("0-0").group.position.clone()
+    : new THREE.Vector3(0, 0, 0);
+
   // All hexcyls transition to state (3),
   // not visible but reclaimable.
   activeKeys = [];
@@ -529,6 +534,9 @@ function hardRestart() {
       }
     }
     centerHexcyl.markAsPlayed();
+
+    // Update camera with translation (preserves rotation)
+    updateCameraToFollowCenter(oldCenterPos, centerHexcyl.group.position);
   }
 
   primaryServer.startEngine(currentFen);
@@ -539,6 +547,11 @@ function hardRestart() {
 // this means we do not send "ucinewgame" and no visible hexcyls
 // are removed from the display.
 function softRestart(newCenter) {
+  // Save old center position BEFORE clearing activeKeys
+  const oldCenterPos = activeKeys.length > 0
+    ? activeKeys[0].group.position.clone()
+    : new THREE.Vector3(0, 0, 0);
+
   primaryServer.stop();
   activeKeys = [];
   pauseAll();
@@ -573,6 +586,32 @@ function softRestart(newCenter) {
   position.board.setPosition(currentFen);
   actionText.value = currentFen;
   primaryServer.move(currentFen);
+
+  // Update camera with translation (preserves rotation)
+  updateCameraToFollowCenter(oldCenterPos, newCenter.group.position);
+}
+
+// Camera Tracking
+
+function updateCameraToFollowCenter(oldCenterPos, newCenterPos) {
+  // Calculate the translation vector (delta)
+  const deltaX = newCenterPos.x - oldCenterPos.x;
+  const deltaY = newCenterPos.y - oldCenterPos.y;
+  const deltaZ = newCenterPos.z - oldCenterPos.z;
+
+  // Translate camera position by delta (preserves user rotation)
+  cam.position.x += deltaX;
+  cam.position.y += deltaY;
+  cam.position.z += deltaZ;
+
+  // Translate orbit target by delta
+  cameraControls.target.x += deltaX;
+  cameraControls.target.y += deltaY;
+  cameraControls.target.z += deltaZ;
+
+  cameraControls.update();
+
+  utils.dbg(`Camera translated by delta (${deltaX.toFixed(2)}, ${deltaY.toFixed(2)}, ${deltaZ.toFixed(2)})`);
 }
 
 // PGN Playback Functions
