@@ -55,16 +55,10 @@ with `uciok`. That's it for now. Use ^D to shut down Stockfish.
 `202X/MM/DD HH:MM:SS Starting server on :8080 (serveStatic=fs, allowedOrigin="", cmd="../sf/stockfish")` and then `Serving static files from disk: dist`.
 
 
-1. Open a browser and visit `http://localhost:8080`. You should see a gray background with a small chessboard at upper left. The status bar at the bottom should say **server status: running**. Don't touch the controls yet.
+1. Open a browser and visit `http://localhost:8080`. You should see a gray background with a small chessboard at upper left. The status bar at the bottom should say **server status: running**. 
 
-1. **Please wait patiently while the web app establishes communication
-with the server** - this is intentionally very slow right now for debugging purposes.
+1. **Please don't be too quick with the buttons.** Allow a few seconds fot the app to start before clicking.
 
-1. In the server command line window, you should see some lines emitted including
-```
-2025/10/24 10:16:37 server received map[data:setoption name MultiPV value 6
-```
-and finally `server received map[data:isready`.
 
 ## Usage
 
@@ -84,6 +78,10 @@ Make a move on the chessboard that is not one of the moves recommended by the en
 **Important note:** when you're done with ChessTerrain, be sure and kill the server. This should kill Stockfish. If you don't, it will continue analyzing, which uses significant CPU and will quickly drain the battery on your laptop. In the future, the server will be more sensitive to loss of client connection and will include a configurable timeout.
 
 I'm curious for feedback on the display.
+
+### PGN playback
+
+When you get tired, click the PGN button. If you have a PGN file you can select it and it will play back slowly allowing about four seconds per move.It will not accept user input on the surface during playback.
 
 ## Developing and building the Javascript
 
