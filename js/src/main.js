@@ -27,6 +27,7 @@ let currentFen = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1" // s
 // PGN Playback state
 let pgnPlaybackState = {
   isPlaying: false,           // Currently playing back?
+  isPaused: false,            // Playback is paused?
   moves: [],                  // Array of move objects from Chess.js history
   currentMoveIndex: 0,        // Which move we're on
   totalMoves: 0,              // Total number of moves
@@ -683,6 +684,12 @@ function startPgnPlayback() {
   // Initialize playback state
   pgnPlaybackState.currentMoveIndex = 0;
   pgnPlaybackState.isPlaying = true;
+  pgnPlaybackState.isPaused = false;
+
+  // Show pause/resume button
+  const pauseResumeButton = document.getElementById('pauseResumePgn');
+  pauseResumeButton.style.display = 'inline';
+  pauseResumeButton.textContent = 'Pause Playback';
 
   // Start interval timer (4000ms = 4 seconds)
   pgnPlaybackState.intervalId = setInterval(playNextMove, 4000);
@@ -746,6 +753,49 @@ function playNextMove() {
   utils.dbg(`Played move ${pgnPlaybackState.currentMoveIndex}/${pgnPlaybackState.totalMoves}: ${move.san}`);
 }
 
+function pausePgnPlayback() {
+  if (!pgnPlaybackState.isPlaying || pgnPlaybackState.isPaused) {
+    return; // Not playing or already paused
+  }
+
+  // Clear interval timer
+  if (pgnPlaybackState.intervalId !== null) {
+    clearInterval(pgnPlaybackState.intervalId);
+    pgnPlaybackState.intervalId = null;
+  }
+
+  pgnPlaybackState.isPaused = true;
+
+  // Update button label
+  const pauseResumeButton = document.getElementById('pauseResumePgn');
+  pauseResumeButton.textContent = 'Resume Playback';
+
+  // Update action text to show paused state
+  actionText.value = `PAUSED: ${pgnPlaybackState.filename} (move ${pgnPlaybackState.currentMoveIndex}/${pgnPlaybackState.totalMoves})`;
+
+  utils.dbg('PGN playback paused');
+}
+
+function resumePgnPlayback() {
+  if (!pgnPlaybackState.isPlaying || !pgnPlaybackState.isPaused) {
+    return; // Not playing or not paused
+  }
+
+  pgnPlaybackState.isPaused = false;
+
+  // Update button label
+  const pauseResumeButton = document.getElementById('pauseResumePgn');
+  pauseResumeButton.textContent = 'Pause Playback';
+
+  // Restart interval timer (4000ms = 4 seconds)
+  pgnPlaybackState.intervalId = setInterval(playNextMove, 4000);
+
+  // Update action text
+  actionText.value = `Playing: ${pgnPlaybackState.filename} (move ${pgnPlaybackState.currentMoveIndex}/${pgnPlaybackState.totalMoves})`;
+
+  utils.dbg('PGN playback resumed');
+}
+
 function stopPgnPlayback(interrupted) {
   // Clear interval timer
   if (pgnPlaybackState.intervalId !== null) {
@@ -753,19 +803,18 @@ function stopPgnPlayback(interrupted) {
     pgnPlaybackState.intervalId = null;
   }
 
+  // Hide pause/resume button
+  const pauseResumeButton = document.getElementById('pauseResumePgn');
+  pauseResumeButton.style.display = 'none';
+
   // Re-enable board input
   position.start();
 
   if (interrupted) {
-    // Stop current analysis before restoring position
-    primaryServer.stop();
-    // Restore saved position
-    position.chess.load(pgnPlaybackState.savedFen);
-    position.board.setPosition(pgnPlaybackState.savedFen);
-    actionText.value = pgnPlaybackState.savedActionText;
-    currentFen = pgnPlaybackState.savedFen;
-    hardRestart();
-    utils.dbg('PGN playback interrupted, restored previous position');
+    // Keep the current position and terrain visible (don't restore)
+    // Just update action text to show FEN
+    actionText.value = position.chess.fen();
+    utils.dbg('PGN playback stopped, terrain remains visible');
   } else {
     // Keep final position and update action text to show FEN
     actionText.value = position.chess.fen();
@@ -774,6 +823,7 @@ function stopPgnPlayback(interrupted) {
 
   // Reset playback state
   pgnPlaybackState.isPlaying = false;
+  pgnPlaybackState.isPaused = false;
   pgnPlaybackState.moves = [];
   pgnPlaybackState.currentMoveIndex = 0;
   pgnPlaybackState.totalMoves = 0;
@@ -827,8 +877,9 @@ function getCanvasRelativePosition(event) {
 }
 
 document.getElementById("c").addEventListener("click", (e) => {
+  // Ignore all hexcyl clicks during playback
   if (pgnPlaybackState.isPlaying) {
-    return; // Ignore hexcyl clicks during playback
+    return;
   }
 
   // PickHelper.pick() returns the type-nameless hexcyl object.
@@ -837,6 +888,7 @@ document.getElementById("c").addEventListener("click", (e) => {
   const x = (pos.x / canvas.width) * 2 - 1;
   const y = (pos.y / canvas.height) * -2 + 1; // note we flip Y
   const picked = pickHelper.pick(x, y, scene, cam);
+
   // Clicking the center hexcyl doesn't do anything.
   if (picked == null || picked == activeKeys[0]) {
     return;
@@ -921,6 +973,17 @@ loadPgnButton.addEventListener('click', function() {
 });
 
 pgnFileInput.addEventListener('change', handlePgnFileSelect);
+
+// Pause/Resume PGN button event handler
+const pauseResumeButton = document.getElementById('pauseResumePgn');
+
+pauseResumeButton.addEventListener('click', function() {
+  if (pgnPlaybackState.isPaused) {
+    resumePgnPlayback();
+  } else {
+    pausePgnPlayback();
+  }
+});
 
 // Finally, start me up.
 // XXX TODO call hardReset() here?
